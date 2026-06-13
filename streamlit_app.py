@@ -143,12 +143,33 @@ def resolve_project_path(path_value):
     return str((Path(__file__).resolve().parent / path).resolve())
 
 
+def _snowflake_google_credentials():
+    """Read Google service account JSON from a Snowflake secret."""
+    try:
+        from snowflake.snowpark.context import get_active_session
+        session = get_active_session()
+        result = session.sql(
+            "SELECT SYSTEM$GET_SECRET('ANALYTICS.PUBLIC.GOOGLE_SERVICE_ACCOUNT') AS secret"
+        ).collect()
+        if result:
+            return json.loads(result[0]["SECRET"])
+    except Exception:
+        pass
+    return None
+
+
 def google_credentials_config(config):
+    # Streamlit Cloud / standard st.secrets (TOML format)
     try:
         if "google_service_account" in st.secrets:
             return dict(st.secrets["google_service_account"]), "Streamlit Secrets"
     except Exception:
         pass
+
+    # Snowflake secret store
+    snowflake_creds = _snowflake_google_credentials()
+    if snowflake_creds:
+        return snowflake_creds, "Snowflake Secret"
 
     credentials_path = resolve_project_path(config.get("googleCredentialsPath", ""))
     return credentials_path, credentials_path
