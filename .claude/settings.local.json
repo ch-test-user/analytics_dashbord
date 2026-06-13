@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls ~/.ssh/ 2>&1)"
+    ]
+  }
+}

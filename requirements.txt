@@ -1,0 +1,6 @@
+altair
+google-api-python-client
+google-auth
+pandas
+openpyxl
+streamlit

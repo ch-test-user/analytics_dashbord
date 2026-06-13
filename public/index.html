@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Costco Consumption Dashboard</title>
+    <link rel="stylesheet" href="/public/src/styles.css">
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark"></span>
+        <div>
+          <h1>Costco Consumption</h1>
+          <p id="sourceMeta">Loading workbook data</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Search</span>
+        <input id="searchInput" type="search" placeholder="Item, code, venue">
+      </label>
+
+      <label class="field">
+        <span>Metric</span>
+        <select id="metricSelect"></select>
+      </label>
+
+      <div class="field">
+        <span>Date range</span>
+        <div class="date-grid">
+          <input id="startDate" type="date">
+          <input id="endDate" type="date">
+        </div>
+      </div>
+
+      <section class="facet">
+        <div class="facet-head">
+          <span>Venues</span>
+          <button id="clearVenues" class="text-button">Clear</button>
+        </div>
+        <div id="venueFacet" class="facet-list"></div>
+      </section>
+
+      <section class="facet">
+        <div class="facet-head">
+          <span>Items</span>
+          <button id="clearItems" class="text-button">Clear</button>
+        </div>
+        <div id="itemFacet" class="facet-list tall"></div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <h2 id="dashboardTitle">Dashboard</h2>
+          <p id="activeSummary"></p>
+        </div>
+        <div class="actions">
+          <button id="refreshButton" class="secondary">Refresh Excel Data</button>
+          <button id="addChartButton">Add Chart</button>
+        </div>
+      </header>
+
+      <section id="kpiRow" class="kpi-row"></section>
+      <section id="chartGrid" class="chart-grid"></section>
+
+      <section class="table-shell">
+        <div class="table-head">
+          <div>
+            <h3>Filtered Rows</h3>
+            <p id="tableSummary"></p>
+          </div>
+          <button id="downloadButton" class="secondary">Download CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="chartDialog">
+      <form method="dialog" class="dialog-card">
+        <h3>Add Chart</h3>
+        <label class="field">
+          <span>Title</span>
+          <input id="chartTitle" required value="New Chart">
+        </label>
+        <label class="field">
+          <span>Type</span>
+          <select id="chartType">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Group by</span>
+          <select id="chartDimension"></select>
+        </label>
+        <label class="field">
+          <span>Metric</span>
+          <select id="chartMetric"></select>
+        </label>
+        <label class="field">
+          <span>Aggregation</span>
+          <select id="chartAggregation">
+            <option value="sum">Sum</option>
+            <option value="avg">Average</option>
+            <option value="count">Count</option>
+          </select>
+        </label>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary">Cancel</button>
+          <button id="saveChartButton" value="default">Add</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/public/src/app.js" type="module"></script>
+  </body>
+</html>

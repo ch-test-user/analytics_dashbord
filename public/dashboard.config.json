@@ -1,0 +1,41 @@
+{
+  "title": "Costco Weekly Consumption",
+  "defaultMetric": "unitSales",
+  "charts": [
+    {
+      "id": "units-trend",
+      "title": "Unit Sales Trend",
+      "type": "line",
+      "dimension": "weekStart",
+      "metric": "unitSales",
+      "aggregation": "sum"
+    },
+    {
+      "id": "sales-by-region",
+      "title": "Dollar Sales by Region",
+      "type": "bar",
+      "dimension": "venue",
+      "metric": "dollarSales",
+      "aggregation": "sum",
+      "limit": 10
+    },
+    {
+      "id": "inventory-by-item",
+      "title": "Inventory by Item",
+      "type": "bar",
+      "dimension": "commonName",
+      "metric": "inventoryOnHand",
+      "aggregation": "sum",
+      "limit": 12
+    },
+    {
+      "id": "warehouse-coverage",
+      "title": "Warehouse Coverage",
+      "type": "bar",
+      "dimension": "venue",
+      "metric": "coverageRate",
+      "aggregation": "avg",
+      "limit": 10
+    }
+  ]
+}
