@@ -51,14 +51,15 @@ st.markdown(
         margin: 0.75rem 0 1rem;
     }
     .kpi-card {
-        border: 1px solid rgba(49, 51, 63, 0.16);
+        border: 1px solid rgba(128, 128, 128, 0.25);
         border-radius: 0.5rem;
         padding: 0.8rem 0.9rem;
-        background: #ffffff;
+        background: var(--background-color, transparent);
         min-height: 92px;
     }
     .kpi-label {
-        color: rgba(49, 51, 63, 0.68);
+        color: var(--text-color, inherit);
+        opacity: 0.68;
         font-size: 0.78rem;
         font-weight: 700;
         text-transform: uppercase;
@@ -66,7 +67,7 @@ st.markdown(
         margin-bottom: 0.35rem;
     }
     .kpi-value {
-        color: rgb(49, 51, 63);
+        color: var(--text-color, inherit);
         font-size: 1.65rem;
         font-weight: 700;
         line-height: 1.1;
@@ -75,7 +76,8 @@ st.markdown(
         text-overflow: ellipsis;
     }
     .kpi-detail {
-        color: rgba(49, 51, 63, 0.68);
+        color: var(--text-color, inherit);
+        opacity: 0.68;
         font-size: 0.78rem;
         margin-top: 0.35rem;
         white-space: nowrap;
@@ -86,8 +88,8 @@ st.markdown(
         position: sticky !important;
         top: 0 !important;
         z-index: 9999 !important;
-        background: #ffffff !important;
-        border-bottom: 1px solid rgba(49, 51, 63, 0.16) !important;
+        background: var(--background-color, transparent) !important;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.25) !important;
         padding-top: 0.35rem !important;
     }
     @media (max-width: 1100px) {
