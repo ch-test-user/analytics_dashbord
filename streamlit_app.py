@@ -916,19 +916,21 @@ def style_inventory_watchlist(inventory_table):
 
 
 PRODUCT_GROUP_KEYWORDS = {
-    "Protein and Bowls": [
+    "Protein Entrees": [
         "organic chicken meatballs",
         "org chicken meatballs",
         "simply roasted chicken",
         "roasted chicken breast",
         "tuscan style roasted chicken",
-        "chipotle chicken bowl",
-        "cilantro lime chicken bowl",
-        "turkey bolognese power bowl",
         "japanese bbq chicken",
         "chicken veggies w parm",
         "sweet and sour chicken",
         "sweet smoky gf sirloin",
+    ],
+    "Protein Bowls": [
+        "chipotle chicken bowl",
+        "cilantro lime chicken bowl",
+        "turkey bolognese power bowl",
     ],
     "Veggie Sides": [
         "red white and blue veggies",
@@ -976,7 +978,7 @@ def product_group(product_name):
 def velocity_threshold_status(group, value):
     if pd.isna(value):
         return "Missing"
-    if group == "Protein and Bowls":
+    if group in {"Protein Entrees", "Protein Bowls"}:
         if value >= 1200:
             return "Green"
         if value >= 1000:
@@ -1099,7 +1101,7 @@ def render_product_region_analysis(filtered):
         st.caption(f"Product x Region period: {period_text}.")
         if matrix_metric == "dollarsPerStorePerWeek":
             st.caption(
-                "$ per Store per Week by product group and region. Protein and Bowls: green >= $1,200, yellow >= $1,000, red below $1,000. "
+                "$ per Store per Week by product group and region. Protein Entrees and Protein Bowls: green >= $1,200, yellow >= $1,000, red below $1,000. "
                 "Veggie Sides and Soups/Broths: green >= $1,000, yellow >= $800, red below $800."
             )
         else:
@@ -1115,7 +1117,7 @@ def render_product_region_analysis(filtered):
         st.markdown("**Product Year Summary**")
         st.caption(
             "Overall $ per Store per Week by product and year across all selected regions. "
-            "The same group thresholds are applied: Protein and Bowls green >= $1,200, yellow >= $1,000; "
+            "The same group thresholds are applied: Protein Entrees and Protein Bowls green >= $1,200, yellow >= $1,000; "
             "Veggie Sides and Soups/Broths green >= $1,000, yellow >= $800."
         )
         year_summary = product_year_summary_matrix(matrix_filtered)
@@ -1134,7 +1136,7 @@ def render_product_region_analysis(filtered):
 
     with st.container(border=True):
         st.markdown("**Group Summary**")
-        st.caption("Grouped rollup by Protein and Bowls, Veggie Sides, and Soups/Broths using $ per Store per Week.")
+        st.caption("Grouped rollup by Protein Entrees, Protein Bowls, Veggie Sides, and Soups/Broths using $ per Store per Week.")
         group_summary = grouped_metric_summary(matrix_filtered)
         if group_summary.empty:
             st.info("No mapped products found for the selected filters.")
