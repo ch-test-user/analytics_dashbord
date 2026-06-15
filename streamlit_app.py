@@ -1146,55 +1146,69 @@ def render_product_region_analysis(filtered):
     render_insights(product_region_insights(matrix_table, year_summary, group_summary))
 
 
-def inventory_watchlist(filtered, mode):
-    if mode == "Latest available week":
-        latest_week = filtered["weekStart"].dropna().max()
-        if pd.isna(latest_week):
-            return pd.DataFrame(), None
-        latest_rows = filtered[filtered["weekStart"] == latest_week]
-        latest_inventory = (
-            latest_rows.groupby("commonName", dropna=False)
-            .agg(
-                inventoryOnHand=("inventoryOnHand", "sum"),
-                coverageRate=("coverageRate", "mean"),
-            )
-            .reset_index()
+def inventory_watchlist(filtered, df_full):
+    # Latest inventory from the sidebar-filtered data
+    latest_week = df_full["weekStart"].dropna().max()
+    if pd.isna(latest_week):
+        return pd.DataFrame(), None
+    latest_rows = filtered[filtered["weekStart"] == latest_week]
+    if latest_rows.empty:
+        latest_rows = df_full[df_full["weekStart"] == latest_week]
+    latest_inventory = (
+        latest_rows.groupby("commonName", dropna=False)
+        .agg(
+            inventoryOnHand=("inventoryOnHand", "sum"),
+            coverageRate=("coverageRate", "mean"),
         )
-        velocity = weekly_velocity(filtered, "commonName")[["commonName", "unitVelocity"]]
-        watchlist = latest_inventory.merge(velocity, on="commonName", how="left")
-        watchlist["weeksOfSupply"] = watchlist["inventoryOnHand"] / watchlist["unitVelocity"].replace({0: pd.NA})
-        return watchlist.dropna(subset=["weeksOfSupply"]).sort_values("weeksOfSupply").head(15), latest_week
+        .reset_index()
+    )
+    # Trailing 4-week velocity from full dataset (ignores date sidebar filter)
+    cutoff = latest_week - pd.Timedelta(weeks=4)
+    trailing = df_full[df_full["weekStart"] > cutoff]
+    # Apply non-date filters: keep only products/venues present in filtered
+    if "commonName" in filtered.columns:
+        trailing = trailing[trailing["commonName"].isin(filtered["commonName"].dropna().unique())]
+    if "venue" in filtered.columns:
+        trailing = trailing[trailing["venue"].isin(filtered["venue"].dropna().unique())]
+    velocity = weekly_velocity(trailing, "commonName")[["commonName", "unitVelocity"]].copy()
+    # Track actual weeks of data per product for transparency
+    weeks_count = (
+        trailing.groupby("commonName")["weekStart"].nunique().reset_index()
+        .rename(columns={"weekStart": "weeksOfData"})
+    )
+    watchlist = latest_inventory.merge(velocity, on="commonName", how="left")
+    watchlist = watchlist.merge(weeks_count, on="commonName", how="left")
+    # Edge cases: zero velocity = no recent sales; missing velocity = no sales history
+    watchlist["weeksOfSupply"] = watchlist["inventoryOnHand"] / watchlist["unitVelocity"].replace({0: pd.NA})
+    watchlist["velocityNote"] = ""
+    watchlist.loc[watchlist["unitVelocity"].isna(), "velocityNote"] = "No sales history"
+    watchlist.loc[watchlist["unitVelocity"] == 0, "velocityNote"] = "No recent sales"
+    watchlist.loc[watchlist["weeksOfData"] < 4, "velocityNote"] = watchlist.loc[watchlist["weeksOfData"] < 4, "weeksOfData"].apply(
+        lambda w: f"Only {int(w)} week(s) of data" if pd.notna(w) else ""
+    )
+    return watchlist.sort_values("weeksOfSupply").head(15), latest_week
 
-    watchlist = weeks_of_supply(filtered).dropna(subset=["weeksOfSupply"]).sort_values("weeksOfSupply").head(15)
-    return watchlist, None
 
-
-def render_inventory_health(filtered):
+def render_inventory_health(filtered, df_full=None):
     st.subheader("Inventory and Supply Health")
     with st.container(border=True):
         st.subheader("Inventory Watchlist")
-        inventory_mode = st.selectbox(
-            "Inventory period",
-            ["Latest available week", "Selected date period"],
-            key="inventory_period_mode",
-            help="Latest available week uses the newest inventory rows after sidebar filters. Selected date period summarizes inventory over the full filtered period.",
-        )
-        wos, latest_week = inventory_watchlist(filtered, inventory_mode)
+        wos, latest_week = inventory_watchlist(filtered, df_full if df_full is not None else filtered)
         if latest_week is not None:
-            st.caption(f"Using latest inventory week: {latest_week.date()}. Weeks of Supply uses latest inventory divided by unit velocity over the selected sidebar period.")
-        else:
-            st.caption("Using the selected sidebar date period. Rows under 2 weeks are highlighted.")
-        inventory_table = wos[["commonName", "inventoryOnHand", "unitVelocity", "weeksOfSupply", "coverageRate"]].rename(
+            st.caption(f"Latest inventory as of {latest_week.date()}. Weeks of Supply = latest inventory ÷ avg weekly unit sales over the trailing 4 weeks.")
+        cols = ["commonName", "inventoryOnHand", "unitVelocity", "weeksOfSupply", "coverageRate", "velocityNote"]
+        inventory_table = wos[[c for c in cols if c in wos.columns]].rename(
             columns={
                 "commonName": "Item",
                 "inventoryOnHand": "Inventory",
-                "unitVelocity": "Unit Velocity",
+                "unitVelocity": "Unit Velocity (4-wk avg)",
                 "weeksOfSupply": "Weeks of Supply",
                 "coverageRate": "Coverage",
+                "velocityNote": "Note",
             }
-        ) if not wos.empty else pd.DataFrame(columns=["Item", "Inventory", "Unit Velocity", "Weeks of Supply", "Coverage"])
-        st.dataframe(style_inventory_watchlist(inventory_table), use_container_width=True, height=280)
-        st.caption("Zeros usually mean the source data has zero inventory/sales for that product after filters, or the denominator is unavailable for that selected period.")
+        ) if not wos.empty else pd.DataFrame(columns=["Item", "Inventory", "Unit Velocity (4-wk avg)", "Weeks of Supply", "Coverage", "Note"])
+        table_height = min(38 + 35 * len(inventory_table), 450)
+        st.dataframe(style_inventory_watchlist(inventory_table), use_container_width=True, height=table_height)
 
     render_insights(inventory_insights(wos, latest_week))
 
@@ -1273,7 +1287,7 @@ def main():
         render_product_region_analysis(filtered)
 
     with inventory_tab:
-        render_inventory_health(filtered)
+        render_inventory_health(filtered, df_full=df)
 
     with custom_tab:
         render_custom_analysis(filtered)
