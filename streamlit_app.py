@@ -688,18 +688,15 @@ def apply_filters(df):
             default_end = min((today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1), date_max_date)
             if default_start > default_end:
                 default_start, default_end = date_min_date, date_max_date
-            date_range = st.date_input(
-                "Date range",
-                value=(default_start, default_end),
-                min_value=date_min_date,
-                max_value=date_max_date,
-                key="global_date_range",
-                help="This date filter applies to every dashboard tab.",
-            )
-            if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
+            sidebar_left, sidebar_right = st.columns(2)
+            start_date = sidebar_left.date_input("Start date", value=default_start, min_value=date_min_date, max_value=date_max_date, key="global_start_date", help="This date filter applies to every dashboard tab.")
+            end_date = sidebar_right.date_input("End date", value=default_end, min_value=date_min_date, max_value=date_max_date, key="global_end_date")
+            if start_date > end_date:
+                st.error("Start date must be before end date.")
+            else:
+                start, end = pd.Timestamp(start_date), pd.Timestamp(end_date)
                 filtered = filtered[(filtered["weekStart"] >= start) & (filtered["weekStart"] <= end)]
-                st.caption(f"Selected range: {date_range[0].strftime('%b %d, %Y')} to {date_range[1].strftime('%b %d, %Y')}")
+                st.caption(f"{start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}")
 
         venues = sorted(filtered["venue"].dropna().unique())
         selected_venues = st.multiselect("Venues", venues, default=[])
@@ -811,46 +808,23 @@ def render_weekly_trends(filtered):
             weekly_data = weekly_product_velocity(weekly_source, selected_product)
             if not weekly_data.empty:
                 weekly_data = weekly_data.sort_values("weekStart")
-                period_col, value_col = st.columns([1, 1.4])
-                weekly_period = period_col.selectbox(
-                    "Weekly period",
-                    ["Month", "Year", "Custom range", "All selected weeks"],
-                    key="weekly_velocity_period_mode",
-                    help="Choose the exact month, year, or custom week range to review.",
-                )
                 chart_data = weekly_data.copy()
-                if weekly_period == "Year":
-                    years = available_years(weekly_data)
-                    selected_year = value_col.selectbox("Year", years, key="weekly_velocity_year")
-                    chart_data = chart_data[chart_data["weekStart"].dt.year == selected_year]
-                    period_text = f"Year {selected_year}: {len(chart_data)} week(s) with data"
-                elif weekly_period == "Month":
-                    month_year_col, month_col = value_col.columns(2)
-                    years = available_years(weekly_data)
-                    selected_year = month_year_col.selectbox("Year", years, key="weekly_velocity_month_year")
-                    months = available_months(weekly_data, selected_year)
-                    selected_month = month_col.selectbox("Month", months, key="weekly_velocity_month", format_func=month_name)
-                    start, end = month_bounds(selected_year, selected_month)
-                    chart_data = chart_data[(chart_data["weekStart"] >= start) & (chart_data["weekStart"] <= end)]
-                    period_text = f"{month_name(selected_month)} {selected_year}: {len(chart_data)} week(s) with data"
-                elif weekly_period == "Custom range":
-                    years = available_years(chart_data)
-                    range_top_left, range_top_right = value_col.columns(2)
-                    start_year = range_top_left.selectbox("Start year", years, key=f"weekly_velocity_start_year_{selected_product}_{selected_region}")
-                    end_year = range_top_right.selectbox("End year", years, key=f"weekly_velocity_end_year_{selected_product}_{selected_region}")
-                    range_bottom_left, range_bottom_right = value_col.columns(2)
-                    start_months = available_months(chart_data, start_year)
-                    end_months = available_months(chart_data, end_year)
-                    start_month = range_bottom_left.selectbox("Start month", start_months, key=f"weekly_velocity_start_month_{selected_product}_{selected_region}", format_func=month_name)
-                    end_month = range_bottom_right.selectbox("End month", end_months, key=f"weekly_velocity_end_month_{selected_product}_{selected_region}", format_func=month_name)
-                    chart_data, start, end = filter_month_range(chart_data, start_year, start_month, end_year, end_month)
-                    if start > end:
-                        period_text = "Start month is after end month"
-                    else:
-                        period_text = f"{month_name(start_month)} {start_year} to {month_name(end_month)} {end_year}: {len(chart_data)} week(s) with data"
-                else:
-                    period_text = f"All selected weeks: {chart_data['weekStart'].min().date()} to {chart_data['weekEnd'].max().date()}: {len(chart_data)} week(s) with data"
-
+                wd_min = chart_data["weekStart"].min().date()
+                wd_max = chart_data["weekEnd"].max().date()
+                import datetime
+                today = datetime.date.today()
+                wd_default_start = max(today.replace(day=1), wd_min)
+                wd_default_end = min((today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1), wd_max)
+                if wd_default_start > wd_default_end:
+                    wd_default_start, wd_default_end = wd_min, wd_max
+                w_left, w_right = st.columns(2)
+                w_start = w_left.date_input("Start date", value=wd_default_start, min_value=wd_min, max_value=wd_max, key=f"weekly_start_{selected_product}_{selected_region}")
+                w_end = w_right.date_input("End date", value=wd_default_end, min_value=wd_min, max_value=wd_max, key=f"weekly_end_{selected_product}_{selected_region}")
+                if w_start > w_end:
+                    st.error("Start date must be before end date.")
+                    return
+                chart_data = chart_data[(chart_data["weekStart"] >= pd.Timestamp(w_start)) & (chart_data["weekStart"] <= pd.Timestamp(w_end))]
+                period_text = f"{w_start.strftime('%b %d, %Y')} to {w_end.strftime('%b %d, %Y')}: {len(chart_data)} week(s) with data"
                 st.caption(period_text)
                 if chart_data.empty:
                     st.info("No weekly data exists for this product, region, and selected period.")
@@ -1186,18 +1160,15 @@ def render_product_region_analysis(filtered):
                 end = matrix_filtered["weekStart"].max()
             elif period_mode == "Custom date range":
                 default_start = max(min_week, (valid_weeks.max() - pd.Timedelta(weeks=8)).date())
-                matrix_date_range = value_col.date_input(
-                    "Date range",
-                    value=(default_start, max_week),
-                    min_value=min_week,
-                    max_value=max_week,
-                    key="product_region_week_range_v2",
-                )
-                if isinstance(matrix_date_range, tuple) and len(matrix_date_range) == 2:
-                    start, end = pd.to_datetime(matrix_date_range[0]), pd.to_datetime(matrix_date_range[1])
-                    matrix_filtered = matrix_filtered[(matrix_filtered["weekStart"] >= start) & (matrix_filtered["weekStart"] <= end)]
-                else:
+                mx_left, mx_right = value_col.columns(2)
+                mx_start = mx_left.date_input("Start date", value=default_start, min_value=min_week, max_value=max_week, key="product_region_start_v2")
+                mx_end = mx_right.date_input("End date", value=max_week, min_value=min_week, max_value=max_week, key="product_region_end_v2")
+                if mx_start > mx_end:
+                    value_col.error("Start date must be before end date.")
                     start, end = pd.to_datetime(default_start), pd.to_datetime(max_week)
+                else:
+                    start, end = pd.to_datetime(mx_start), pd.to_datetime(mx_end)
+                    matrix_filtered = matrix_filtered[(matrix_filtered["weekStart"] >= start) & (matrix_filtered["weekStart"] <= end)]
             else:
                 start, end = pd.to_datetime(min_week), pd.to_datetime(max_week)
             period_text = f"{pd.to_datetime(start).date()} to {pd.to_datetime(end).date()}" if "start" in locals() and "end" in locals() else "No dates selected"
