@@ -675,7 +675,11 @@ def apply_filters(df):
     filtered = df.copy()
     with st.sidebar:
         st.header("Filters")
-        search = st.text_input("Search", placeholder="Item, code, venue, file, product tab")
+
+        items = sorted(filtered["commonName"].dropna().unique())
+        selected_items = st.multiselect("Items", items, default=[])
+        if selected_items:
+            filtered = filtered[filtered["commonName"].isin(selected_items)]
 
         date_min = filtered["weekStart"].min()
         date_max = filtered["weekStart"].max()
@@ -699,28 +703,6 @@ def apply_filters(df):
         selected_venues = st.multiselect("Venues", venues, default=[])
         if selected_venues:
             filtered = filtered[filtered["venue"].isin(selected_venues)]
-
-        items = sorted(filtered["commonName"].dropna().unique())
-        selected_items = st.multiselect("Items", items, default=[])
-        if selected_items:
-            filtered = filtered[filtered["commonName"].isin(selected_items)]
-
-        if "sourceFile" in filtered:
-            files = sorted(filtered["sourceFile"].dropna().unique())
-            selected_files = st.multiselect("Source files", files, default=[])
-            if selected_files:
-                filtered = filtered[filtered["sourceFile"].isin(selected_files)]
-
-        if "productTab" in filtered:
-            tabs = sorted(filtered["productTab"].dropna().unique())
-            selected_tabs = st.multiselect("Product tabs", tabs, default=[])
-            if selected_tabs:
-                filtered = filtered[filtered["productTab"].isin(selected_tabs)]
-
-    if search:
-        fields = ["commonName", "item", "itemCode", "venue", "dateLabel", "sourceFile", "productTab", "sourceSheet"]
-        haystack = filtered[[field for field in fields if field in filtered]].fillna("").agg(" ".join, axis=1).str.lower()
-        filtered = filtered[haystack.str.contains(search.lower(), regex=False)]
 
     return filtered
 
