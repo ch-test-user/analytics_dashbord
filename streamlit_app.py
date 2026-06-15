@@ -1236,7 +1236,8 @@ def render_product_region_analysis(filtered):
         if matrix_table.empty:
             st.info("No mapped products found for the selected filters.")
         else:
-            st.dataframe(style_grouped_velocity_matrix(matrix_table, matrix_metric), use_container_width=True, height=420)
+            matrix_height = min(38 + 35 * len(matrix_table), 600)
+            st.dataframe(style_grouped_velocity_matrix(matrix_table, matrix_metric), use_container_width=True, height=matrix_height)
 
     with st.container(border=True):
         st.markdown("**Product Year Summary**")
