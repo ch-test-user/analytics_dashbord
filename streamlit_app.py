@@ -683,11 +683,8 @@ def apply_filters(df):
             date_min_date = date_min.date()
             date_max_date = date_max.date()
             import datetime
-            today = datetime.date.today()
-            default_start = max(today.replace(day=1), date_min_date)
-            default_end = min((today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1), date_max_date)
-            if default_start > default_end:
-                default_start, default_end = date_min_date, date_max_date
+            default_start = date_max_date.replace(day=1)
+            default_end = date_max_date
             sidebar_left, sidebar_right = st.columns(2)
             start_date = sidebar_left.date_input("Start date", value=default_start, min_value=date_min_date, max_value=date_max_date, key="global_start_date", help="This date filter applies to every dashboard tab.")
             end_date = sidebar_right.date_input("End date", value=default_end, min_value=date_min_date, max_value=date_max_date, key="global_end_date")
@@ -811,12 +808,8 @@ def render_weekly_trends(filtered):
                 chart_data = weekly_data.copy()
                 wd_min = chart_data["weekStart"].min().date()
                 wd_max = chart_data["weekEnd"].max().date()
-                import datetime
-                today = datetime.date.today()
-                wd_default_start = max(today.replace(day=1), wd_min)
-                wd_default_end = min((today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1), wd_max)
-                if wd_default_start > wd_default_end:
-                    wd_default_start, wd_default_end = wd_min, wd_max
+                wd_default_start = wd_max.replace(day=1)
+                wd_default_end = wd_max
                 w_left, w_right = st.columns(2)
                 w_start = w_left.date_input("Start date", value=wd_default_start, min_value=wd_min, max_value=wd_max, key=f"weekly_start_{selected_product}_{selected_region}")
                 w_end = w_right.date_input("End date", value=wd_default_end, min_value=wd_min, max_value=wd_max, key=f"weekly_end_{selected_product}_{selected_region}")
@@ -1159,7 +1152,7 @@ def render_product_region_analysis(filtered):
                 start = matrix_filtered["weekStart"].min()
                 end = matrix_filtered["weekStart"].max()
             elif period_mode == "Custom date range":
-                default_start = max(min_week, (valid_weeks.max() - pd.Timedelta(weeks=8)).date())
+                default_start = max_week.replace(day=1)
                 mx_left, mx_right = value_col.columns(2)
                 mx_start = mx_left.date_input("Start date", value=default_start, min_value=min_week, max_value=max_week, key="product_region_start_v2")
                 mx_end = mx_right.date_input("End date", value=max_week, min_value=min_week, max_value=max_week, key="product_region_end_v2")
