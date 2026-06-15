@@ -686,8 +686,8 @@ def apply_filters(df):
             latest_month_start = weeks["weekStart"].max().to_pydatetime().replace(day=1)
             default_from = next((w for w in week_starts if w.to_pydatetime() >= latest_month_start), week_starts[0])
             default_to = week_starts[-1]
-            from_week = st.selectbox("From week", week_starts, index=week_starts.index(default_from), format_func=lambda w: week_labels[w], key="global_from_week")
-            to_week = st.selectbox("To week", week_starts, index=week_starts.index(default_to), format_func=lambda w: week_labels[w], key="global_to_week")
+            from_week = st.selectbox("Start week", week_starts, index=week_starts.index(default_from), format_func=lambda w: week_labels[w], key="global_from_week")
+            to_week = st.selectbox("End week", week_starts, index=week_starts.index(default_to), format_func=lambda w: week_labels[w], key="global_to_week")
             if from_week > to_week:
                 st.error("'From' week must be before 'To' week.")
             else:
