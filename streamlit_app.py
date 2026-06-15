@@ -526,10 +526,8 @@ def render_insights(items):
     clean_items = [item for item in items if item]
     if not clean_items:
         return
-    with st.container(border=True):
-        st.markdown("**Insights**")
-        for item in clean_items:
-            st.markdown(f"- {item}")
+    bullets = "\n".join(f"- {item}" for item in clean_items)
+    st.markdown(f"💡 **Insights**\n{bullets}")
 
 
 def overview_insights(filtered):
@@ -732,6 +730,7 @@ def render_product_performance(filtered):
     product_unit_velocity = weekly_velocity(filtered, "commonName").sort_values("unitVelocity", ascending=False).head(15)
 
     st.subheader("Product Performance")
+    render_insights(overview_insights(filtered))
     with st.container(border=True):
         st.markdown("**Top Products by $ per Store per Week**")
         sorted_bar_chart(product_velocity, "commonName", "dollarsPerStorePerWeek", "$ per store per week", height=460)
@@ -746,13 +745,13 @@ def render_product_performance(filtered):
             st.markdown("**Top Products by Unit Velocity**")
             sorted_bar_chart(product_unit_velocity, "commonName", "unitVelocity", "Units per active week", height=360)
 
-    render_insights(overview_insights(filtered))
 
 
 def render_weekly_trends(filtered):
     product_velocity = weekly_velocity(filtered, "commonName").sort_values("dollarsPerStorePerWeek", ascending=False).head(15)
 
     st.subheader("Weekly Trends")
+    render_insights(overview_insights(filtered))
     with st.container(border=True):
         st.markdown("**Weekly Sales Performance**")
         st.caption(
@@ -807,7 +806,6 @@ def render_weekly_trends(filtered):
                 )
                 table_height = min(38 + 35 * len(display), 400)
                 st.dataframe(style_weekly_performance_table(display), use_container_width=True, height=table_height)
-                render_insights(weekly_insights(performance_data))
             else:
                 st.info("No weekly velocity data for the selected product, region, and filters.")
         else:
@@ -819,6 +817,7 @@ def render_region_analysis(filtered):
     region_unit_velocity = weekly_velocity(filtered, "venue").sort_values("unitVelocity", ascending=False).head(10)
 
     st.subheader("Region Analysis")
+    render_insights(region_insights(filtered))
     region_left, region_right = st.columns(2)
     with region_left:
         with st.container(border=True):
@@ -838,8 +837,6 @@ def render_region_analysis(filtered):
             sorted_bar_chart(region_product_velocity, "commonName", "dollarsPerStorePerWeek", "$ per store per week", height=420)
         else:
             st.info("No region data for the selected filters.")
-
-    render_insights(region_insights(filtered))
 
 
 def chart_manager():
@@ -1081,6 +1078,18 @@ def render_product_region_analysis(filtered):
 
     matrix_filtered = filtered.copy()
 
+    # Pre-compute data so insights can appear at top
+    matrix_metric = st.selectbox(
+        "Matrix metric",
+        ["dollarsPerStorePerWeek", "unitVelocity", "dollarSales", "unitSales", "inventoryOnHand", "coverageRate"],
+        format_func=lambda value: METRIC_LABELS[value],
+        key="grouped_matrix_metric",
+    )
+    matrix_table = grouped_product_region_matrix(matrix_filtered, matrix_metric)
+    year_summary = product_year_summary_matrix(matrix_filtered)
+    group_summary = grouped_metric_summary(matrix_filtered)
+    render_insights(product_region_insights(matrix_table, year_summary, group_summary))
+
     with st.container(border=True):
         st.markdown("**Product x Region Matrix**")
         valid_weeks = matrix_filtered["weekStart"].dropna().sort_values()
@@ -1091,12 +1100,6 @@ def render_product_region_analysis(filtered):
             st.info("No week dates are available for Product x Region filtering.")
             period_text = "No dates selected"
 
-        matrix_metric = st.selectbox(
-            "Matrix metric",
-            ["dollarsPerStorePerWeek", "unitVelocity", "dollarSales", "unitSales", "inventoryOnHand", "coverageRate"],
-            format_func=lambda value: METRIC_LABELS[value],
-            key="grouped_matrix_metric",
-        )
         st.caption(f"Product x Region period: {period_text}.")
         if matrix_metric == "dollarsPerStorePerWeek":
             st.caption(
@@ -1105,7 +1108,6 @@ def render_product_region_analysis(filtered):
             )
         else:
             st.caption(metric_definition(matrix_metric))
-        matrix_table = grouped_product_region_matrix(matrix_filtered, matrix_metric)
         if matrix_table.empty:
             st.info("No mapped products found for the selected filters.")
         else:
@@ -1119,7 +1121,6 @@ def render_product_region_analysis(filtered):
             "The same group thresholds are applied: Protein Entrees and Protein Bowls green >= $1,200, yellow >= $1,000; "
             "Veggie Sides and Soups/Broths green >= $1,000, yellow >= $800."
         )
-        year_summary = product_year_summary_matrix(matrix_filtered)
         if year_summary.empty:
             st.info("No mapped yearly product data found for the selected filters.")
         else:
@@ -1136,13 +1137,10 @@ def render_product_region_analysis(filtered):
     with st.container(border=True):
         st.markdown("**Group Summary**")
         st.caption("Grouped rollup by Protein Entrees, Protein Bowls, Veggie Sides, and Soups/Broths using $ per Store per Week.")
-        group_summary = grouped_metric_summary(matrix_filtered)
         if group_summary.empty:
             st.info("No mapped products found for the selected filters.")
         else:
             sorted_bar_chart(group_summary, "productGroup", "dollarsPerStorePerWeek", "$ per store per week", height=260)
-
-    render_insights(product_region_insights(matrix_table, year_summary, group_summary))
 
 
 def inventory_watchlist(filtered, df_full):
@@ -1190,9 +1188,10 @@ def inventory_watchlist(filtered, df_full):
 
 def render_inventory_health(filtered, df_full=None):
     st.subheader("Inventory and Supply Health")
+    wos, latest_week = inventory_watchlist(filtered, df_full if df_full is not None else filtered)
+    render_insights(inventory_insights(wos, latest_week))
     with st.container(border=True):
         st.subheader("Inventory Watchlist")
-        wos, latest_week = inventory_watchlist(filtered, df_full if df_full is not None else filtered)
         if latest_week is not None:
             st.caption(f"Latest inventory as of {latest_week.date()}. Weeks of Supply = latest inventory ÷ avg weekly unit sales over the trailing 4 weeks.")
         cols = ["commonName", "inventoryOnHand", "unitVelocity", "weeksOfSupply", "velocityNote"]
@@ -1208,12 +1207,11 @@ def render_inventory_health(filtered, df_full=None):
         table_height = min(38 + 35 * len(inventory_table), 450)
         st.dataframe(style_inventory_watchlist(inventory_table), use_container_width=True, height=table_height)
 
-    render_insights(inventory_insights(wos, latest_week))
-
 
 def render_custom_analysis(filtered):
     st.subheader("Custom Analysis")
     st.caption("Sidebar filters apply to the whole dashboard. Use this section for additional custom charts, matrix views, and row-level export.")
+    render_insights(custom_export_insights(filtered))
 
     chart_manager()
 
@@ -1245,7 +1243,6 @@ def render_custom_analysis(filtered):
         "costco_filtered_rows.csv",
         "text/csv",
     )
-    render_insights(custom_export_insights(filtered))
 
 
 def main():
