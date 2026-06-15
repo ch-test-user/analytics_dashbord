@@ -773,7 +773,7 @@ def render_product_performance(filtered):
     render_insights(overview_insights(filtered))
 
 
-def render_weekly_trends(filtered, df_full=None):
+def render_weekly_trends(filtered):
     product_velocity = weekly_velocity(filtered, "commonName").sort_values("dollarsPerStorePerWeek", ascending=False).head(15)
 
     st.subheader("Weekly Trends")
@@ -806,19 +806,7 @@ def render_weekly_trends(filtered, df_full=None):
             if not weekly_data.empty:
                 weekly_data = weekly_data.sort_values("weekStart")
                 chart_data = weekly_data.copy()
-                full_source = df_full if df_full is not None else filtered
-                wd_min = full_source["weekStart"].min().date()
-                wd_max = full_source["weekEnd"].max().date()
-                wd_default_start = wd_max.replace(day=1)
-                wd_default_end = wd_max
-                w_left, w_right = st.columns(2)
-                w_start = w_left.date_input("Start date", value=wd_default_start, min_value=wd_min, max_value=wd_max, key=f"weekly_start_{selected_product}_{selected_region}")
-                w_end = w_right.date_input("End date", value=wd_default_end, min_value=wd_min, max_value=wd_max, key=f"weekly_end_{selected_product}_{selected_region}")
-                if w_start > w_end:
-                    st.error("Start date must be before end date.")
-                    return
-                chart_data = chart_data[(chart_data["weekStart"] >= pd.Timestamp(w_start)) & (chart_data["weekStart"] <= pd.Timestamp(w_end))]
-                period_text = f"{w_start.strftime('%b %d, %Y')} to {w_end.strftime('%b %d, %Y')}: {len(chart_data)} week(s) with data"
+                period_text = f"{chart_data['weekStart'].min().date().strftime('%b %d, %Y')} to {chart_data['weekEnd'].max().date().strftime('%b %d, %Y')}: {len(chart_data)} week(s) with data"
                 st.caption(period_text)
                 if chart_data.empty:
                     st.info("No weekly data exists for this product, region, and selected period.")
@@ -1120,58 +1108,13 @@ def render_product_region_analysis(filtered):
         st.markdown("**Product x Region Matrix**")
         valid_weeks = matrix_filtered["weekStart"].dropna().sort_values()
         if not valid_weeks.empty:
-            min_week = valid_weeks.min().date()
-            max_week = valid_weeks.max().date()
-            period_col, value_col, metric_col = st.columns([1, 1.2, 1])
-            period_mode = period_col.selectbox(
-                "Matrix period",
-                ["Latest 8 weeks", "Latest 12 weeks", "Full year", "Month", "Custom date range", "Full selected range"],
-                key="product_region_period_mode_v2",
-                help="Latest weeks are shown by default. Sidebar filters still apply first.",
-            )
-            if period_mode in {"Latest 8 weeks", "Latest 12 weeks"}:
-                week_count = 8 if period_mode == "Latest 8 weeks" else 12
-                latest_weeks = sorted(valid_weeks.drop_duplicates().tail(week_count).tolist())
-                if latest_weeks:
-                    start, end = latest_weeks[0], latest_weeks[-1]
-                    matrix_filtered = matrix_filtered[(matrix_filtered["weekStart"] >= start) & (matrix_filtered["weekStart"] <= end)]
-                else:
-                    start, end = pd.to_datetime(min_week), pd.to_datetime(max_week)
-            elif period_mode == "Full year":
-                available_years = sorted(valid_weeks.dt.year.dropna().astype(int).unique().tolist(), reverse=True)
-                selected_year = value_col.selectbox("Year", available_years, key="product_region_year_v2")
-                start = pd.Timestamp(year=selected_year, month=1, day=1)
-                end = pd.Timestamp(year=selected_year, month=12, day=31)
-                matrix_filtered = matrix_filtered[(matrix_filtered["weekStart"] >= start) & (matrix_filtered["weekStart"] <= end)]
-            elif period_mode == "Month":
-                month_data = matrix_filtered.dropna(subset=["weekStart"]).copy()
-                month_data["month"] = month_data["weekStart"].dt.strftime("%Y-%m")
-                month_data["monthLabel"] = month_data["weekStart"].dt.strftime("%b %Y")
-                month_options = month_data[["month", "monthLabel"]].drop_duplicates().sort_values("month", ascending=False)["monthLabel"].tolist()
-                selected_month = value_col.selectbox("Month", month_options, key="product_region_month")
-                matrix_filtered = month_data[month_data["monthLabel"] == selected_month].drop(columns=["month", "monthLabel"])
-                start = matrix_filtered["weekStart"].min()
-                end = matrix_filtered["weekStart"].max()
-            elif period_mode == "Custom date range":
-                default_start = max_week.replace(day=1)
-                mx_left, mx_right = value_col.columns(2)
-                mx_start = mx_left.date_input("Start date", value=default_start, min_value=min_week, max_value=max_week, key="product_region_start_v2")
-                mx_end = mx_right.date_input("End date", value=max_week, min_value=min_week, max_value=max_week, key="product_region_end_v2")
-                if mx_start > mx_end:
-                    value_col.error("Start date must be before end date.")
-                    start, end = pd.to_datetime(default_start), pd.to_datetime(max_week)
-                else:
-                    start, end = pd.to_datetime(mx_start), pd.to_datetime(mx_end)
-                    matrix_filtered = matrix_filtered[(matrix_filtered["weekStart"] >= start) & (matrix_filtered["weekStart"] <= end)]
-            else:
-                start, end = pd.to_datetime(min_week), pd.to_datetime(max_week)
-            period_text = f"{pd.to_datetime(start).date()} to {pd.to_datetime(end).date()}" if "start" in locals() and "end" in locals() else "No dates selected"
+            start, end = valid_weeks.min(), valid_weeks.max()
+            period_text = f"{start.date()} to {end.date()}"
         else:
-            period_col, metric_col = st.columns([2.2, 1])
-            period_col.info("No week dates are available for Product x Region filtering.")
+            st.info("No week dates are available for Product x Region filtering.")
             period_text = "No dates selected"
 
-        matrix_metric = metric_col.selectbox(
+        matrix_metric = st.selectbox(
             "Matrix metric",
             ["dollarsPerStorePerWeek", "unitVelocity", "dollarSales", "unitSales", "inventoryOnHand", "coverageRate"],
             format_func=lambda value: METRIC_LABELS[value],
@@ -1346,7 +1289,7 @@ def main():
         render_product_performance(filtered)
 
     with weekly_tab:
-        render_weekly_trends(filtered, df_full=df)
+        render_weekly_trends(filtered)
 
     with region_tab:
         render_region_analysis(filtered)
