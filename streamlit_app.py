@@ -486,7 +486,10 @@ def weekly_performance_chart(data, product_name, height=520):
     if avg_layers is not None:
         chart_layers = area + avg_layers + x_crosshair + y_crosshair + line + points + demo_points + hover_point + label_halo + labels + hover_targets
 
-    st.altair_chart(chart_layers.properties(height=height), use_container_width=True)
+    if len(plot_data) == 1:
+        st.info("Only 1 week of data in the selected range — expand the date range to see trends.")
+    else:
+        st.altair_chart(chart_layers.properties(height=height), use_container_width=True)
 
 
 def style_weekly_performance_table(table):
@@ -869,7 +872,8 @@ def render_weekly_trends(filtered):
                         "dollarSales": "Dollar Sales",
                     }
                 )
-                st.dataframe(style_weekly_performance_table(display), use_container_width=True, height=360)
+                table_height = min(38 + 35 * len(display), 400)
+                st.dataframe(style_weekly_performance_table(display), use_container_width=True, height=table_height)
                 render_insights(weekly_insights(performance_data))
             else:
                 st.info("No weekly velocity data for the selected product, region, and filters.")
