@@ -147,3 +147,4 @@ activemq-data/
 tempCodeRunnerFile.py
 .cowork_deploy_key
 .cowork_deploy_key.pub
+.claude/settings.local.json
