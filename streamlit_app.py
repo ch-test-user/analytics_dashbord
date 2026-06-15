@@ -773,7 +773,7 @@ def render_product_performance(filtered):
     render_insights(overview_insights(filtered))
 
 
-def render_weekly_trends(filtered):
+def render_weekly_trends(filtered, df_full=None):
     product_velocity = weekly_velocity(filtered, "commonName").sort_values("dollarsPerStorePerWeek", ascending=False).head(15)
 
     st.subheader("Weekly Trends")
@@ -806,8 +806,9 @@ def render_weekly_trends(filtered):
             if not weekly_data.empty:
                 weekly_data = weekly_data.sort_values("weekStart")
                 chart_data = weekly_data.copy()
-                wd_min = chart_data["weekStart"].min().date()
-                wd_max = chart_data["weekEnd"].max().date()
+                full_source = df_full if df_full is not None else filtered
+                wd_min = full_source["weekStart"].min().date()
+                wd_max = full_source["weekEnd"].max().date()
                 wd_default_start = wd_max.replace(day=1)
                 wd_default_end = wd_max
                 w_left, w_right = st.columns(2)
@@ -1345,7 +1346,7 @@ def main():
         render_product_performance(filtered)
 
     with weekly_tab:
-        render_weekly_trends(filtered)
+        render_weekly_trends(filtered, df_full=df)
 
     with region_tab:
         render_region_analysis(filtered)
