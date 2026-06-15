@@ -857,7 +857,8 @@ def render_weekly_trends(filtered):
                     return
                 region_label = selected_region if selected_region != "All regions" else "All selected regions"
                 performance_data = weekly_performance_data(chart_data, selected_product, region_label)
-                weekly_performance_chart(performance_data, selected_product, height=430)
+                chart_height = min(max(220, len(performance_data) * 18), 380)
+                weekly_performance_chart(performance_data, selected_product, height=chart_height)
 
                 st.markdown("**Weekly Performance Table**")
                 table = performance_data.copy()
