@@ -1091,6 +1091,7 @@ def render_product_region_analysis(filtered):
     year_summary = product_year_summary_matrix(matrix_filtered)
     group_summary = grouped_metric_summary(matrix_filtered)
     render_insights(product_region_insights(insights_matrix_table, year_summary, group_summary))
+    st.caption("\\* Insights always based on $ per Store per Week, regardless of selected matrix metric.")
 
     with st.container(border=True):
         st.markdown("**Product x Region Matrix**")
