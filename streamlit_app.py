@@ -671,16 +671,14 @@ def apply_filters(df):
         if selected_items:
             filtered = filtered[filtered["commonName"].isin(selected_items)]
 
-        end_col = "weekEnd" if "weekEnd" in filtered.columns else "weekEnding"
-        weeks = (
-            filtered[["weekStart", end_col]]
-            .dropna()
-            .drop_duplicates()
-            .sort_values("weekStart")
-        )
+        week_starts = filtered["weekStart"].dropna().drop_duplicates().sort_values()
+        weeks = pd.DataFrame({
+            "weekStart": week_starts.values,
+            "weekEnd": week_starts.values + pd.Timedelta(days=6),
+        })
         if not weeks.empty:
             week_labels = {
-                row.weekStart: f"{row.weekStart.strftime('%b %d')} – {getattr(row, end_col).strftime('%b %d, %Y')}"
+                row.weekStart: f"{row.weekStart.strftime('%b %d')} – {row.weekEnd.strftime('%b %d, %Y')}"
                 for row in weeks.itertuples()
             }
             week_starts = list(week_labels.keys())
