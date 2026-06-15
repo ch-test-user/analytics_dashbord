@@ -671,23 +671,28 @@ def apply_filters(df):
         if selected_items:
             filtered = filtered[filtered["commonName"].isin(selected_items)]
 
-        date_min = filtered["weekStart"].min()
-        date_max = filtered["weekEnd"].max()
-        if pd.notna(date_min) and pd.notna(date_max):
-            date_min_date = date_min.date()
-            date_max_date = date_max.date()
-            import datetime
-            default_start = date_max_date.replace(day=1)
-            default_end = date_max_date
-            sidebar_left, sidebar_right = st.columns(2)
-            start_date = sidebar_left.date_input("Start date", value=default_start, min_value=date_min_date, max_value=date_max_date, key="global_start_date", help="This date filter applies to every dashboard tab.")
-            end_date = sidebar_right.date_input("End date", value=default_end, min_value=date_min_date, max_value=date_max_date, key="global_end_date")
-            if start_date > end_date:
-                st.error("Start date must be before end date.")
+        weeks = (
+            filtered[["weekStart", "weekEnd"]]
+            .dropna()
+            .drop_duplicates()
+            .sort_values("weekStart")
+        )
+        if not weeks.empty:
+            week_labels = {
+                row.weekStart: f"{row.weekStart.strftime('%b %d')} – {row.weekEnd.strftime('%b %d, %Y')}"
+                for row in weeks.itertuples()
+            }
+            week_starts = list(week_labels.keys())
+            latest_month_start = weeks["weekStart"].max().to_pydatetime().replace(day=1)
+            default_from = next((w for w in week_starts if w.to_pydatetime() >= latest_month_start), week_starts[0])
+            default_to = week_starts[-1]
+            from_week = st.selectbox("From week", week_starts, index=week_starts.index(default_from), format_func=lambda w: week_labels[w], key="global_from_week")
+            to_week = st.selectbox("To week", week_starts, index=week_starts.index(default_to), format_func=lambda w: week_labels[w], key="global_to_week")
+            if from_week > to_week:
+                st.error("'From' week must be before 'To' week.")
             else:
-                start, end = pd.Timestamp(start_date), pd.Timestamp(end_date)
-                filtered = filtered[(filtered["weekStart"] >= start) & (filtered["weekStart"] <= end)]
-                st.caption(f"{start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}")
+                filtered = filtered[(filtered["weekStart"] >= from_week) & (filtered["weekStart"] <= to_week)]
+                st.caption(f"{week_labels[from_week].split('–')[0].strip()} to {week_labels[to_week].split('–')[1].strip()}")
 
         venues = sorted(filtered["venue"].dropna().unique())
         selected_venues = st.multiselect("Venues", venues, default=[])
