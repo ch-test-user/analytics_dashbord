@@ -672,7 +672,7 @@ def apply_filters(df):
             filtered = filtered[filtered["commonName"].isin(selected_items)]
 
         date_min = filtered["weekStart"].min()
-        date_max = filtered["weekStart"].max()
+        date_max = filtered["weekEnd"].max()
         if pd.notna(date_min) and pd.notna(date_max):
             date_min_date = date_min.date()
             date_max_date = date_max.date()
