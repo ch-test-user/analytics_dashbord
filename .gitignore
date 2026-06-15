@@ -145,3 +145,5 @@ activemq-data/
 .abstra/
 .ruff_cache/
 tempCodeRunnerFile.py
+.cowork_deploy_key
+.cowork_deploy_key.pub
