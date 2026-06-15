@@ -907,9 +907,8 @@ def style_inventory_watchlist(inventory_table):
     return inventory_table.style.format(
         {
             "Inventory": "{:,.0f}",
-            "Unit Velocity": "{:,.0f}",
+            "Unit Velocity (4-wk avg)": "{:,.0f}",
             "Weeks of Supply": "{:,.1f}",
-            "Coverage": "{:.1%}",
         },
         na_rep="-",
     ).apply(style_row, axis=1)
@@ -1196,17 +1195,16 @@ def render_inventory_health(filtered, df_full=None):
         wos, latest_week = inventory_watchlist(filtered, df_full if df_full is not None else filtered)
         if latest_week is not None:
             st.caption(f"Latest inventory as of {latest_week.date()}. Weeks of Supply = latest inventory ÷ avg weekly unit sales over the trailing 4 weeks.")
-        cols = ["commonName", "inventoryOnHand", "unitVelocity", "weeksOfSupply", "coverageRate", "velocityNote"]
+        cols = ["commonName", "inventoryOnHand", "unitVelocity", "weeksOfSupply", "velocityNote"]
         inventory_table = wos[[c for c in cols if c in wos.columns]].rename(
             columns={
                 "commonName": "Item",
                 "inventoryOnHand": "Inventory",
                 "unitVelocity": "Unit Velocity (4-wk avg)",
                 "weeksOfSupply": "Weeks of Supply",
-                "coverageRate": "Coverage",
                 "velocityNote": "Note",
             }
-        ) if not wos.empty else pd.DataFrame(columns=["Item", "Inventory", "Unit Velocity (4-wk avg)", "Weeks of Supply", "Coverage", "Note"])
+        ) if not wos.empty else pd.DataFrame(columns=["Item", "Inventory", "Unit Velocity (4-wk avg)", "Weeks of Supply", "Note"])
         table_height = min(38 + 35 * len(inventory_table), 450)
         st.dataframe(style_inventory_watchlist(inventory_table), use_container_width=True, height=table_height)
 
