@@ -679,41 +679,22 @@ def apply_filters(df):
         if pd.notna(date_min) and pd.notna(date_max):
             date_min_date = date_min.date()
             date_max_date = date_max.date()
-            date_mode = st.selectbox(
-                "Date period",
-                ["All dates", "Year", "Month", "Custom range"],
-                key="global_date_period_mode",
+            import datetime
+            today = datetime.date.today()
+            default_start = today.replace(day=1)
+            default_end = (today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1)
+            date_range = st.date_input(
+                "Date range",
+                value=(default_start, default_end),
+                min_value=date_min_date,
+                max_value=date_max_date,
+                key="global_date_range",
                 help="This date filter applies to every dashboard tab.",
             )
-            years = available_years(filtered)
-            if date_mode == "Year":
-                selected_year = st.selectbox("Year", years, key="global_filter_year")
-                start = pd.Timestamp(year=selected_year, month=1, day=1)
-                end = pd.Timestamp(year=selected_year, month=12, day=31)
+            if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+                start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
                 filtered = filtered[(filtered["weekStart"] >= start) & (filtered["weekStart"] <= end)]
-                st.caption(f"Selected weeks: {max(start.date(), date_min_date)} to {min(end.date(), date_max_date)}")
-            elif date_mode == "Month":
-                month_year = st.selectbox("Year", years, key="global_filter_month_year")
-                months = available_months(filtered, month_year)
-                selected_month = st.selectbox("Month", months, key="global_filter_month", format_func=month_name)
-                start, end = month_bounds(month_year, selected_month)
-                filtered = filtered[(filtered["weekStart"] >= start) & (filtered["weekStart"] <= end)]
-                st.caption(f"Selected month: {month_name(selected_month)} {month_year}")
-            elif date_mode == "Custom range":
-                start_year = st.selectbox("Start year", years, key="global_range_start_year")
-                start_months = available_months(filtered, start_year)
-                start_month = st.selectbox("Start month", start_months, key="global_range_start_month", format_func=month_name)
-                end_year = st.selectbox("End year", years, key="global_range_end_year")
-                end_months = available_months(filtered, end_year)
-                end_month = st.selectbox("End month", end_months, key="global_range_end_month", format_func=month_name)
-                filtered_range, start, end = filter_month_range(filtered, start_year, start_month, end_year, end_month)
-                if start > end:
-                    st.warning("Start month is after end month. Adjust the range to apply the filter.")
-                else:
-                    filtered = filtered_range
-                    st.caption(f"Selected range: {month_name(start_month)} {start_year} to {month_name(end_month)} {end_year}")
-            else:
-                st.caption(f"Selected weeks: {date_min_date} to {date_max_date}")
+                st.caption(f"Selected range: {date_range[0].strftime('%b %d, %Y')} to {date_range[1].strftime('%b %d, %Y')}")
 
         venues = sorted(filtered["venue"].dropna().unique())
         selected_venues = st.multiselect("Venues", venues, default=[])
