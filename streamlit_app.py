@@ -1085,10 +1085,12 @@ def render_product_region_analysis(filtered):
         format_func=lambda value: METRIC_LABELS[value],
         key="grouped_matrix_metric",
     )
-    matrix_table = grouped_product_region_matrix(matrix_filtered, matrix_metric)
+    # Insights always use $ / Store / Week so they stay stable regardless of metric dropdown
+    insights_matrix_table = grouped_product_region_matrix(matrix_filtered, "dollarsPerStorePerWeek")
+    matrix_table = insights_matrix_table if matrix_metric == "dollarsPerStorePerWeek" else grouped_product_region_matrix(matrix_filtered, matrix_metric)
     year_summary = product_year_summary_matrix(matrix_filtered)
     group_summary = grouped_metric_summary(matrix_filtered)
-    render_insights(product_region_insights(matrix_table, year_summary, group_summary))
+    render_insights(product_region_insights(insights_matrix_table, year_summary, group_summary))
 
     with st.container(border=True):
         st.markdown("**Product x Region Matrix**")
