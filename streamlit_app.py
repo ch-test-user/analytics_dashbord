@@ -169,21 +169,11 @@ def load_dashboard_data(config):
             st.rerun()
 
         spreadsheet_url = st.text_input("Google Sheet URL or ID", value=config.get("googleSheetUrl", ""))
-        credentials_config, credentials_label = google_credentials_config(config)
-        st.text_input(
-            "Google credentials source",
-            value=credentials_label,
-            disabled=True,
-            help="Cloud deployments use Streamlit Secrets. Local runs can use the configured JSON file path.",
-        )
+        credentials_config, _ = google_credentials_config(config)
         if not spreadsheet_url:
             st.warning("Enter a Google Sheet URL or spreadsheet ID.")
             st.stop()
-        if isinstance(credentials_config, dict):
-            st.caption("Service account key loaded from Streamlit Secrets.")
-        elif credentials_config and Path(credentials_config).expanduser().exists():
-            st.caption("Service account key found.")
-        elif credentials_config:
+        if credentials_config and not isinstance(credentials_config, dict) and not Path(credentials_config).expanduser().exists():
             st.warning("Service account key path does not exist.")
 
         try:
@@ -1259,9 +1249,6 @@ def main():
         with st.expander("Data load warnings", expanded=True):
             st.warning("Some rows or tabs needed cleanup during import. Review these before relying on the dashboard.")
             st.write(df.attrs["load_warnings"])
-    with st.expander("Loaded sources", expanded=False):
-        st.write(source_files)
-
     overview_tab, weekly_tab, region_tab, product_region_tab, inventory_tab, custom_tab = st.tabs(
         ["Overview", "Weekly Trends", "Region Analysis", "Product x Region", "Inventory", "Custom / Export"]
     )
