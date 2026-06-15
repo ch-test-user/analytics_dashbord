@@ -681,8 +681,10 @@ def apply_filters(df):
             date_max_date = date_max.date()
             import datetime
             today = datetime.date.today()
-            default_start = today.replace(day=1)
-            default_end = (today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1)
+            default_start = max(today.replace(day=1), date_min_date)
+            default_end = min((today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1), date_max_date)
+            if default_start > default_end:
+                default_start, default_end = date_min_date, date_max_date
             date_range = st.date_input(
                 "Date range",
                 value=(default_start, default_end),
