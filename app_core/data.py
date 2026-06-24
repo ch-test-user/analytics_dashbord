@@ -135,6 +135,8 @@ def normalize_frame(df, source_name, source_sheet, source_order=0, source_modifi
 
     df["item"] = df["item"].fillna(source_sheet)
     df["commonName"] = df["commonName"].fillna(source_sheet)
+    # Strip leading item number (e.g. "1486657 OG RAINBOW CARROTS" → "OG RAINBOW CARROTS")
+    df["commonName"] = df["commonName"].astype(str).str.replace(r"^\d+\s+", "", regex=True)
 
     if "weekStart" in df:
         direct_week_start = pd.to_datetime(df["weekStart"], errors="coerce", format="mixed")
