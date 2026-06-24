@@ -430,7 +430,9 @@ def weekly_performance_chart(data, product_name, height=520):
     area = base.mark_area(color="#1E88E5", opacity=0.10, interpolate="linear").encode(order=alt.Order("weekEnd:T"))
     line = base.mark_line(color="#1289E8", strokeWidth=4, point=False, interpolate="linear").encode(order=alt.Order("weekEnd:T"))
     points = base.mark_point(filled=True, size=120, color="#1289E8", stroke="#FFFFFF", strokeWidth=2)
-    demo_points = base.transform_filter("datum.isDemoWeek == true").mark_point(filled=True, size=220, color="#FF7F0E", stroke="#FFFFFF", strokeWidth=2)
+    demo_rules = alt.Chart(plot_data[plot_data["isDemoWeek"] == True][["weekAxisLabel"]].drop_duplicates()).mark_rule(
+        color="#FF7F0E", strokeDash=[4, 3], strokeWidth=2, opacity=0.8
+    ).encode(x=alt.X("weekAxisLabel:N", sort=week_label_order))
     label_halo = base.mark_text(
         fontSize=11,
         fontWeight="bold",
@@ -472,9 +474,9 @@ def weekly_performance_chart(data, product_name, height=520):
         )
         avg_layers = avg_rule + avg_label
 
-    chart_layers = area + x_crosshair + y_crosshair + line + points + demo_points + hover_point + label_halo + labels + hover_targets
+    chart_layers = area + x_crosshair + y_crosshair + line + points + demo_rules + hover_point + label_halo + labels + hover_targets
     if avg_layers is not None:
-        chart_layers = area + avg_layers + x_crosshair + y_crosshair + line + points + demo_points + hover_point + label_halo + labels + hover_targets
+        chart_layers = area + avg_layers + x_crosshair + y_crosshair + line + points + demo_rules + hover_point + label_halo + labels + hover_targets
 
     if len(plot_data) == 1:
         st.info("Only 1 week of data in the selected range — expand the date range to see trends.")
