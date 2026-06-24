@@ -430,7 +430,7 @@ def weekly_performance_chart(data, product_name, height=520):
     area = base.mark_area(color="#1E88E5", opacity=0.10, interpolate="linear").encode(order=alt.Order("weekEnd:T"))
     line = base.mark_line(color="#1289E8", strokeWidth=4, point=False, interpolate="linear").encode(order=alt.Order("weekEnd:T"))
     points = base.mark_point(filled=True, size=120, color="#1289E8", stroke="#FFFFFF", strokeWidth=2)
-    demo_points = base.transform_filter("datum.isDemoWeek == true").mark_point(filled=True, size=190, color="#1E88E5", stroke="#0B4F8A", strokeWidth=2)
+    demo_points = base.transform_filter("datum.isDemoWeek == true").mark_point(filled=True, size=220, color="#FF7F0E", stroke="#FFFFFF", strokeWidth=2)
     label_halo = base.mark_text(
         fontSize=11,
         fontWeight="bold",
@@ -747,6 +747,50 @@ def render_product_performance(filtered):
 
 
 
+def weekly_region_lines_chart(df, product, height=360):
+    """Multi-line chart: each region is a line, demo weeks shown as vertical rules."""
+    product_rows = df[df["commonName"] == product].dropna(subset=["weekStart", "venue"]).copy()
+    if product_rows.empty:
+        st.info("No regional breakdown available for this product.")
+        return
+    grouped = (
+        product_rows.groupby(["weekStart", "venue"], dropna=False)
+        .agg(dollarSales=("dollarSales", "sum"), warehousesSelling=("warehousesSelling", "sum"), isDemoWeek=("isDemoWeek", "max"))
+        .reset_index()
+    )
+    grouped["weekEnd"] = grouped["weekStart"] + pd.Timedelta(days=6)
+    grouped["weeklyDollarsPerStorePerWeek"] = grouped["dollarSales"] / grouped["warehousesSelling"].replace({0: pd.NA})
+    grouped["weekAxisLabel"] = grouped["weekEnd"].dt.strftime("%-m/%-d")
+    week_order = grouped.sort_values("weekEnd")["weekAxisLabel"].drop_duplicates().tolist()
+    label_angle = -45 if len(week_order) > 12 else 0
+
+    base = alt.Chart(grouped).encode(
+        x=alt.X("weekAxisLabel:N", sort=week_order, title="Week Ending",
+                 axis=alt.Axis(labelAngle=label_angle, labelFontSize=11, titleFontSize=12, titlePadding=12)),
+        y=alt.Y("weeklyDollarsPerStorePerWeek:Q", title="$ per Store per Week",
+                 axis=alt.Axis(format="$,.0f", grid=True, labelFontSize=11)),
+        color=alt.Color("venue:N", title="Region"),
+        tooltip=[
+            alt.Tooltip("weekAxisLabel:N", title="Week Ending"),
+            alt.Tooltip("venue:N", title="Region"),
+            alt.Tooltip("weeklyDollarsPerStorePerWeek:Q", title="$ / Store / Week", format="$,.0f"),
+            alt.Tooltip("dollarSales:Q", title="Dollar Sales", format="$,.0f"),
+        ],
+    )
+    lines = base.mark_line(strokeWidth=2)
+    points = base.mark_point(filled=True, size=60)
+    layers = [lines, points]
+
+    demo_weeks = grouped[grouped["isDemoWeek"] == True][["weekAxisLabel"]].drop_duplicates()
+    if not demo_weeks.empty:
+        demo_rules = alt.Chart(demo_weeks).mark_rule(
+            color="#FF7F0E", strokeDash=[4, 3], strokeWidth=2, opacity=0.7
+        ).encode(x=alt.X("weekAxisLabel:N", sort=week_order))
+        layers.insert(0, demo_rules)
+
+    st.altair_chart(alt.layer(*layers).properties(height=height), use_container_width=True)
+
+
 def render_weekly_trends(filtered):
     product_velocity = weekly_velocity(filtered, "commonName").sort_values("dollarsPerStorePerWeek", ascending=False).head(15)
 
@@ -755,7 +799,7 @@ def render_weekly_trends(filtered):
     with st.container(border=True):
         st.markdown("**Weekly Sales Performance**")
         st.caption(
-            "Week-by-week average dollar sales per warehouse selling. Demo weeks are highlighted in blue when the source workbook marks them."
+            "Week-by-week average dollar sales per warehouse selling. 🟠 Orange dots mark demo weeks when the source workbook marks them."
         )
         available_products = sorted(filtered["commonName"].dropna().unique())
         if available_products:
@@ -811,6 +855,12 @@ def render_weekly_trends(filtered):
         else:
             st.info("No product data for the selected filters.")
 
+    with st.container(border=True):
+        st.markdown("**Weekly Trends by Region**")
+        st.caption("Each line is a region. 🟠 Orange vertical lines mark demo weeks.")
+        if available_products:
+            weekly_region_lines_chart(filtered, selected_product)
+
 
 def render_region_analysis(filtered):
     region_velocity = weekly_velocity(filtered, "venue").sort_values("dollarsPerStorePerWeek", ascending=False).head(10)
@@ -828,15 +878,6 @@ def render_region_analysis(filtered):
             st.markdown("**Top Regions by Unit Velocity**")
             sorted_bar_chart(region_unit_velocity, "venue", "unitVelocity", "Units per active week", height=320)
 
-    with st.container(border=True):
-        st.markdown("**Product $ per Store per Week by Region**")
-        available_regions = sorted(filtered["venue"].dropna().unique())
-        if available_regions:
-            selected_region = st.selectbox("Region", available_regions, key="product_velocity_region")
-            region_product_velocity = product_velocity_for_region(filtered, selected_region, limit=15)
-            sorted_bar_chart(region_product_velocity, "commonName", "dollarsPerStorePerWeek", "$ per store per week", height=420)
-        else:
-            st.info("No region data for the selected filters.")
 
 
 def chart_manager():
