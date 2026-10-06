@@ -6,9 +6,12 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from app_core.data import load_uploaded_workbooks, load_workbooks, list_workbooks
+from app_core.forecasting import FORECAST_METRIC_DEFINITIONS, build_inventory_forecast
 from app_core.google_sheets import load_google_sheet
+from app_core.weekly_email_report import build_weekly_email_report, send_email_report
 from app_core.metrics import (
     DEFAULT_CHARTS,
     DIMENSION_LABELS,
@@ -91,6 +94,83 @@ st.markdown(
         background: var(--background-color, transparent) !important;
         border-bottom: 1px solid rgba(128, 128, 128, 0.25) !important;
         padding-top: 0.35rem !important;
+    }
+    .weekly-report {
+        margin-top: 1.25rem;
+    }
+    .weekly-report h4 {
+        margin: 1.15rem 0 0.1rem;
+        font-size: 0.95rem;
+    }
+    .weekly-report .report-subtitle {
+        margin: 0 0 0.45rem;
+        font-size: 0.82rem;
+        color: rgba(49, 51, 63, 0.78);
+    }
+    .weekly-report table {
+        border-collapse: collapse;
+        margin: 0 0 0.5rem;
+        font-size: 0.78rem;
+        width: auto;
+        max-width: 100%;
+    }
+    .weekly-report th {
+        background: #2f4358;
+        color: #ffffff;
+        border: 1px solid #2f4358;
+        padding: 0.36rem 0.48rem;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .weekly-report th:first-child,
+    .weekly-report td:first-child {
+        text-align: left;
+        min-width: 86px;
+    }
+    .weekly-report th.demo-week {
+        background: #f39c12;
+    }
+    .weekly-report td {
+        border: 1px solid #d7dce1;
+        padding: 0.34rem 0.48rem;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .weekly-report tr.value-row td {
+        background: #f2f3f5;
+    }
+    .weekly-report tr.wow-row td {
+        background: #fbfbfc;
+        color: #777;
+    }
+    .weekly-report td.latest {
+        background: #e8eff3 !important;
+        font-weight: 700;
+    }
+    .weekly-report td.region-name {
+        font-weight: 700;
+        color: #263238;
+    }
+    .weekly-report td.wow-label {
+        color: #7a7a7a;
+        font-weight: 600;
+    }
+    .weekly-report .positive {
+        color: #027a3d !important;
+        font-weight: 700;
+    }
+    .weekly-report .negative {
+        color: #c62828 !important;
+        font-weight: 700;
+    }
+    .weekly-report .muted {
+        color: #9aa0a6 !important;
+        font-weight: 600;
+    }
+    .weekly-report .report-note {
+        margin: 0.25rem 0 0.9rem;
+        font-size: 0.78rem;
+        color: rgba(49, 51, 63, 0.78);
     }
     @media (max-width: 1100px) {
         .kpi-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
@@ -620,6 +700,59 @@ def inventory_insights(wos, latest_week):
     return insights
 
 
+def normalize_forecast_columns(forecast):
+    forecast = forecast.copy()
+    if forecast.empty:
+        return forecast
+    if "inventoryNeed" not in forecast.columns:
+        if {"projected4WeekDemand", "inventoryOnHand"}.issubset(forecast.columns):
+            forecast["inventoryNeed"] = (forecast["projected4WeekDemand"] - forecast["inventoryOnHand"].fillna(0)).clip(lower=0)
+        elif "recommendedOrderQty" in forecast.columns:
+            forecast["inventoryNeed"] = forecast["recommendedOrderQty"]
+        else:
+            forecast["inventoryNeed"] = 0
+    if "statusRank" not in forecast.columns and "status" in forecast.columns:
+        status_rank = {"Critical": 0, "Low": 1, "Watch": 2, "Healthy": 3, "Overstock": 4}
+        forecast["statusRank"] = forecast["status"].map(status_rank).fillna(9)
+    if "trendFactor" not in forecast.columns:
+        forecast["trendFactor"] = 1.0
+    if "demoWeeksExcluded" not in forecast.columns:
+        forecast["demoWeeksExcluded"] = 0
+    if "weeksOfSupply" not in forecast.columns:
+        forecast["weeksOfSupply"] = pd.NA
+    if "status" not in forecast.columns:
+        forecast["status"] = "Watch"
+    return forecast
+
+
+def forecast_insights(forecast, latest_week):
+    forecast = normalize_forecast_columns(forecast)
+    insights = []
+    if latest_week is not None:
+        insights.append(f"Forecast uses latest available inventory week: {latest_week.date()}.")
+    if forecast.empty:
+        return insights
+
+    action_rows = forecast[forecast["status"].isin(["Critical", "Low"])]
+    if not action_rows.empty:
+        total_need = action_rows.get("inventoryNeed", pd.Series(0, index=action_rows.index)).fillna(0).sum()
+        insights.append(f"{len(action_rows):,} product-region row(s) are Critical or Low, with {number(total_need)} units needed to cover the next 4 weeks.")
+
+    critical = forecast[forecast["status"] == "Critical"]
+    if not critical.empty:
+        row = critical.sort_values("weeksOfSupply").iloc[0]
+        insights.append(f"Most urgent gap is {row['commonName']} in {row['venue']} at {row['weeksOfSupply']:.1f} weeks of supply.")
+
+    rising = forecast[(forecast["trendFactor"] >= 1.2) & (forecast["status"].isin(["Critical", "Low", "Watch"]))]
+    if not rising.empty:
+        insights.append(f"{len(rising):,} flagged row(s) also have rising velocity, so recent demand is moving above baseline.")
+
+    excluded_demo = int((forecast["demoWeeksExcluded"].fillna(0) > 0).sum())
+    if excluded_demo:
+        insights.append(f"{excluded_demo:,} row(s) excluded recent demo weeks from baseline demand to avoid overstating regular inventory need.")
+    return insights
+
+
 def custom_export_insights(filtered):
     insights = []
     insights.append(f"Filtered export contains {len(filtered):,} rows.")
@@ -793,6 +926,35 @@ def weekly_region_lines_chart(df, product, height=360):
     st.altair_chart(alt.layer(*layers).properties(height=height), use_container_width=True)
 
 
+def render_weekly_insights_report(filtered):
+    forecast, _ = build_inventory_forecast(filtered, filtered)
+    forecast = normalize_forecast_columns(forecast)
+    with st.container(border=True):
+        st.markdown("**Weekly Insights Report**")
+        st.caption("Screenshot-style weekly velocity trend tables by product and region, using average dollar sales per warehouse selling.")
+        default_products = default_weekly_report_products(filtered, forecast)
+        report_product_options = sorted(filtered["commonName"].dropna().unique().tolist())
+        default_report_products = [product for product in default_products if product in report_product_options]
+        selected_report_products = st.multiselect(
+            "Products in weekly report",
+            report_product_options,
+            default=default_report_products,
+            key="weekly_report_products",
+        )
+        render_insights(weekly_report_insights(filtered, forecast, selected_report_products))
+        if not selected_report_products:
+            st.info("Select one or more products to generate weekly velocity trend tables.")
+        else:
+            max_weeks = st.slider("Weeks shown", min_value=4, max_value=10, value=8, step=1, key="weekly_report_weeks")
+            max_regions = st.slider("Regions shown per product", min_value=3, max_value=12, value=8, step=1, key="weekly_report_regions")
+            for product in selected_report_products:
+                table_html = weekly_velocity_table_html(filtered, product, max_regions=max_regions, max_weeks=max_weeks)
+                if table_html:
+                    st.markdown(table_html, unsafe_allow_html=True)
+                else:
+                    st.info(f"No weekly trend table is available for {product}.")
+
+
 def render_weekly_trends(filtered):
     product_velocity = weekly_velocity(filtered, "commonName").sort_values("dollarsPerStorePerWeek", ascending=False).head(15)
 
@@ -862,6 +1024,8 @@ def render_weekly_trends(filtered):
         st.caption("Each line is a region. 🟠 Orange vertical lines mark demo weeks.")
         if available_products:
             weekly_region_lines_chart(filtered, selected_product)
+
+    render_weekly_insights_report(filtered)
 
 
 def render_region_analysis(filtered):
@@ -952,6 +1116,218 @@ def style_inventory_watchlist(inventory_table):
         },
         na_rep="-",
     ).apply(style_row, axis=1)
+
+
+def style_inventory_forecast(forecast_table):
+    status_colors = {
+        "Critical": "background-color: #F4CCCC; color: #8A1F1F; font-weight: 700",
+        "Low": "background-color: #FCE5CD; color: #7A3E00; font-weight: 700",
+        "Watch": "background-color: #FFF2CC; color: #5F4B00",
+        "Healthy": "background-color: #D9EAD3; color: #274E13",
+        "Overstock": "background-color: #D9EAF7; color: #134F5C",
+    }
+
+    def style_row(row):
+        style = status_colors.get(row.get("Status"), "")
+        return [style if column == "Status" else "" for column in row.index]
+
+    return forecast_table.style.format(
+        {
+            "Current Inventory": "{:,.0f}",
+            "4-Week Avg Velocity": "{:,.0f}",
+            "Weighted Velocity": "{:,.0f}",
+            "Adjusted Forecast Velocity": "{:,.0f}",
+            "Trend Factor": "{:,.2f}",
+            "Projected 3-Week Demand": "{:,.0f}",
+            "Projected 4-Week Demand": "{:,.0f}",
+            "Weeks of Supply": "{:,.1f}",
+            "Inventory Need": "{:,.0f}",
+        },
+        na_rep="-",
+    ).apply(style_row, axis=1)
+
+
+def render_metric_guide():
+    with st.expander("Metric guide: simple meanings and formulas", expanded=True):
+        st.caption("These are the exact formulas used in the Inventory Forecast report.")
+        rows = []
+        for metric, details in FORECAST_METRIC_DEFINITIONS.items():
+            if isinstance(details, dict):
+                meaning = details.get("meaning", "")
+                formula = details.get("formula", "")
+            else:
+                meaning = details
+                formula = "-"
+            rows.append(
+                f'<tr><td class="metric-name">{escape(metric)}</td><td>{escape(meaning)}</td><td class="formula-cell">{escape(formula)}</td></tr>'
+            )
+        guide_html = (
+            '<style>'
+            '.formula-guide{width:100%;border-collapse:collapse;font-size:.82rem;line-height:1.25;}'
+            '.formula-guide th{text-align:left;padding:.35rem .45rem;border-bottom:1px solid rgba(128,128,128,.35);}'
+            '.formula-guide td{vertical-align:top;padding:.34rem .45rem;border-bottom:1px solid rgba(128,128,128,.18);}'
+            '.formula-guide .metric-name{font-weight:700;white-space:nowrap;}'
+            '.formula-guide .formula-cell{font-family:"STIX Two Math","Cambria Math","Times New Roman",serif;'
+            'font-style:italic;font-size:.92rem;color:#3d2b00;background:rgba(255,243,205,.55);'
+            'border-left:3px solid #d6a100;min-width:260px;}'
+            '</style>'
+            '<table class="formula-guide">'
+            '<thead><tr><th>Metric</th><th>Meaning</th><th>Formula</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody>'
+            '</table>'
+        )
+        st.markdown(
+            guide_html,
+            unsafe_allow_html=True,
+        )
+
+
+def _short_week_label(week_start):
+    week_end = pd.to_datetime(week_start) + pd.Timedelta(days=6)
+    return week_end.strftime("%-m/%-d")
+
+
+def _report_currency(value):
+    return f"${value:,.0f}" if pd.notna(value) else "-"
+
+
+def _report_percent(value):
+    if pd.isna(value):
+        return "-"
+    return f"{value:+.0%}"
+
+
+def _report_delta_class(value):
+    if pd.isna(value):
+        return "muted"
+    if value > 0:
+        return "positive"
+    if value < 0:
+        return "negative"
+    return "muted"
+
+
+def weekly_velocity_report_data(df, product, max_weeks=8):
+    product_rows = df[df["commonName"] == product].dropna(subset=["weekStart", "venue"]).copy()
+    if product_rows.empty:
+        return pd.DataFrame(), [], set()
+
+    weekly = (
+        product_rows.groupby(["venue", "weekStart"], dropna=False)
+        .agg(
+            dollarSales=("dollarSales", "sum"),
+            warehousesSelling=("warehousesSelling", "sum"),
+            isDemoWeek=("isDemoWeek", "max"),
+        )
+        .reset_index()
+        .sort_values("weekStart")
+    )
+    weekly["weeklyDollarsPerStore"] = weekly["dollarSales"] / weekly["warehousesSelling"].replace({0: pd.NA})
+    weeks = weekly["weekStart"].dropna().sort_values().drop_duplicates().tail(max_weeks).tolist()
+    weekly = weekly[weekly["weekStart"].isin(weeks)].copy()
+    demo_weeks = set(weekly.loc[weekly["isDemoWeek"].fillna(False), "weekStart"].tolist())
+    return weekly, weeks, demo_weeks
+
+
+def weekly_velocity_table_html(df, product, max_regions=8, max_weeks=8):
+    weekly, weeks, demo_weeks = weekly_velocity_report_data(df, product, max_weeks=max_weeks)
+    if weekly.empty or not weeks:
+        return ""
+
+    latest_week = weeks[-1]
+    latest_values = weekly[weekly["weekStart"] == latest_week].sort_values("weeklyDollarsPerStore", ascending=False)
+    regions = latest_values["venue"].dropna().head(max_regions).tolist()
+    if not regions:
+        regions = weekly["venue"].dropna().drop_duplicates().head(max_regions).tolist()
+    weekly = weekly[weekly["venue"].isin(regions)].copy()
+
+    pivot = weekly.pivot_table(index="venue", columns="weekStart", values="weeklyDollarsPerStore", aggfunc="sum")
+    pivot = pivot.reindex(index=regions, columns=weeks)
+    wow = pivot.pct_change(axis=1)
+
+    header_cells = ['<th>Region</th>']
+    for week in weeks:
+        demo_class = " demo-week" if week in demo_weeks else ""
+        marker = "*" if week in demo_weeks else ""
+        header_cells.append(f'<th class="{demo_class.strip()}">{escape(_short_week_label(week))}{marker}</th>')
+
+    body_rows = []
+    for region in regions:
+        value_cells = [f'<td class="region-name">{escape(str(region))}</td>']
+        wow_cells = ['<td class="wow-label">WoW</td>']
+        for index, week in enumerate(weeks):
+            latest_class = " latest" if week == latest_week else ""
+            value_cells.append(f'<td class="{latest_class.strip()}">{escape(_report_currency(pivot.loc[region, week]))}</td>')
+            delta = wow.loc[region, week]
+            delta_class = _report_delta_class(delta)
+            wow_latest_class = " latest" if week == latest_week else ""
+            classes = " ".join(part for part in [delta_class, wow_latest_class] if part)
+            wow_cells.append(f'<td class="{classes}">{escape(_report_percent(delta))}</td>')
+        body_rows.append(f'<tr class="value-row">{"".join(value_cells)}</tr>')
+        body_rows.append(f'<tr class="wow-row">{"".join(wow_cells)}</tr>')
+
+    title = escape(compact_product_title(product, "All selected regions"))
+    demo_note = ""
+    if demo_weeks:
+        demo_labels = ", ".join(_short_week_label(week) for week in sorted(demo_weeks))
+        demo_note = f'<p class="report-note">*Demo week - {escape(demo_labels)} sales lift may reflect in-club demo activity.</p>'
+
+    return f"""
+    <div class="weekly-report">
+      <h4>{title} - Weekly Velocity Trend</h4>
+      <p class="report-subtitle">Average $ Sales per Warehouse Selling</p>
+      <table>
+        <thead><tr>{"".join(header_cells)}</tr></thead>
+        <tbody>{"".join(body_rows)}</tbody>
+      </table>
+      {demo_note}
+    </div>
+    """
+
+
+def weekly_report_insights(df, forecast, selected_products):
+    insights = []
+    if not selected_products:
+        return insights
+
+    for product in selected_products[:4]:
+        weekly, weeks, _ = weekly_velocity_report_data(df, product, max_weeks=5)
+        if weekly.empty or len(weeks) < 2:
+            continue
+        latest_week = weeks[-1]
+        prior_week = weeks[-2]
+        latest = weekly[weekly["weekStart"] == latest_week].copy()
+        prior = weekly[weekly["weekStart"] == prior_week][["venue", "weeklyDollarsPerStore"]].rename(
+            columns={"weeklyDollarsPerStore": "priorValue"}
+        )
+        comparison = latest.merge(prior, on="venue", how="left")
+        comparison["wowPct"] = (comparison["weeklyDollarsPerStore"] - comparison["priorValue"]) / comparison["priorValue"].replace({0: pd.NA})
+        if not comparison.empty:
+            top = comparison.sort_values("weeklyDollarsPerStore", ascending=False).iloc[0]
+            insight = f"{compact_product_title(product, 'All selected regions')} latest top region is {top['venue']} at {_report_currency(top['weeklyDollarsPerStore'])}."
+            if pd.notna(top.get("wowPct")):
+                insight += f" WoW changed {_report_percent(top['wowPct'])}."
+            insights.append(insight)
+
+        product_forecast = forecast[forecast["commonName"] == product] if not forecast.empty else pd.DataFrame()
+        urgent = product_forecast[product_forecast["status"].isin(["Critical", "Low"])] if not product_forecast.empty else pd.DataFrame()
+        if not urgent.empty:
+            regions = ", ".join(urgent.sort_values("weeksOfSupply").head(3)["venue"].astype(str).tolist())
+            insights.append(f"{compact_product_title(product, 'All selected regions')} has low inventory coverage in {regions}.")
+    return insights
+
+
+def default_weekly_report_products(filtered, forecast, limit=5):
+    forecast = normalize_forecast_columns(forecast)
+    if not forecast.empty:
+        action = forecast[forecast["status"].isin(["Critical", "Low", "Watch"])].copy()
+        if not action.empty:
+            return action.sort_values(["statusRank", "inventoryNeed"], ascending=[True, False])["commonName"].dropna().drop_duplicates().head(limit).tolist()
+
+    velocity = weekly_velocity(filtered, "commonName").dropna(subset=["dollarsPerStorePerWeek"])
+    if velocity.empty:
+        return sorted(filtered["commonName"].dropna().unique().tolist())[:limit]
+    return velocity.sort_values("dollarsPerStorePerWeek", ascending=False)["commonName"].dropna().head(limit).tolist()
 
 
 PRODUCT_GROUP_KEYWORDS = {
@@ -1254,6 +1630,171 @@ def render_inventory_health(filtered, df_full=None):
         st.dataframe(style_inventory_watchlist(inventory_table), use_container_width=True, height=table_height)
 
 
+def render_inventory_forecast(filtered, df_full=None):
+    st.subheader("Inventory Forecast")
+    st.caption("Region-wise 3-4 week inventory planning for products active in the last 4 weeks, based on current inventory, recent unit sales velocity, trend, and demo handling.")
+
+    forecast, latest_week = build_inventory_forecast(df_full if df_full is not None else filtered, filtered)
+    forecast = normalize_forecast_columns(forecast)
+    render_insights(forecast_insights(forecast, latest_week))
+
+    if forecast.empty:
+        st.info("No forecast rows are available for the selected filters.")
+        render_metric_guide()
+        return
+
+    summary_cols = st.columns(5)
+    critical_count = int((forecast["status"] == "Critical").sum())
+    low_count = int((forecast["status"] == "Low").sum())
+    total_needed = forecast.loc[forecast["status"].isin(["Critical", "Low"]), "inventoryNeed"].fillna(0).sum()
+    avg_weeks = forecast["weeksOfSupply"].replace([float("inf"), -float("inf")], pd.NA).dropna().mean()
+    rising_count = int((forecast["trendFactor"] >= 1.2).sum())
+    summary_cols[0].metric("Critical", number(critical_count), "Under urgent supply threshold")
+    summary_cols[1].metric("Low", number(low_count), "Below 3 weeks supply")
+    summary_cols[2].metric("Units Needed", number(total_needed), "To cover 4-week demand")
+    summary_cols[3].metric("Avg Weeks Supply", f"{avg_weeks:.1f}" if pd.notna(avg_weeks) else "-", "Selected forecast rows")
+    summary_cols[4].metric("Rising Velocity", number(rising_count), "Trend factor >= 1.20")
+
+    left, right = st.columns([1.2, 2])
+    status_options = ["Critical", "Low", "Watch", "Healthy", "Overstock"]
+    selected_statuses = left.multiselect("Status", status_options, default=["Critical", "Low", "Watch"])
+    product_options = sorted(forecast["commonName"].dropna().unique().tolist())
+    selected_products = right.multiselect("Products", product_options, default=[])
+
+    visible = forecast.copy()
+    if selected_statuses:
+        visible = visible[visible["status"].isin(selected_statuses)]
+    if selected_products:
+        visible = visible[visible["commonName"].isin(selected_products)]
+
+    display_cols = [
+        "venue",
+        "commonName",
+        "status",
+        "weeksOfSupply",
+        "inventoryNeed",
+        "projected4WeekDemand",
+        "inventoryOnHand",
+        "inventoryWeek",
+        "expectedStockoutWeek",
+        "reasonCode",
+        "adjustedForecastVelocity",
+        "fourWeekAvgVelocity",
+        "weightedVelocity",
+        "trendFactor",
+        "projected3WeekDemand",
+    ]
+    display = visible[[col for col in display_cols if col in visible]].rename(
+        columns={
+            "venue": "Region",
+            "commonName": "Product",
+            "status": "Status",
+            "inventoryWeek": "Inventory Week",
+            "inventoryOnHand": "Current Inventory",
+            "fourWeekAvgVelocity": "4-Week Avg Velocity",
+            "weightedVelocity": "Weighted Velocity",
+            "adjustedForecastVelocity": "Adjusted Forecast Velocity",
+            "trendFactor": "Trend Factor",
+            "projected3WeekDemand": "Projected 3-Week Demand",
+            "projected4WeekDemand": "Projected 4-Week Demand",
+            "weeksOfSupply": "Weeks of Supply",
+            "inventoryNeed": "Inventory Need",
+            "expectedStockoutWeek": "Expected Stockout Week",
+            "reasonCode": "Reason Code",
+        }
+    )
+    if "Inventory Week" in display:
+        display["Inventory Week"] = pd.to_datetime(display["Inventory Week"], errors="coerce").dt.date
+    if "Expected Stockout Week" in display:
+        display["Expected Stockout Week"] = pd.to_datetime(display["Expected Stockout Week"], errors="coerce").dt.date
+
+    with st.container(border=True):
+        st.markdown("**Region-Wise Inventory Need**")
+        if latest_week is not None:
+            st.caption(
+                f"Report through {latest_week.date()}. Only product-region rows with unit sales in the last 4 weeks are included. Each row uses that product-region's own latest available Inventory Week. Inventory Need = projected 4-week unit demand minus current inventory."
+            )
+        table_height = min(80 + 35 * len(display), 620)
+        st.dataframe(style_inventory_forecast(display), use_container_width=True, height=table_height)
+        st.download_button(
+            "Download forecast CSV",
+            display.to_csv(index=False).encode("utf-8"),
+            "inventory_forecast_report.csv",
+            "text/csv",
+        )
+
+    render_metric_guide()
+
+
+def render_email_report(filtered, df_full=None):
+    st.subheader("Weekly Email Report")
+    st.caption(
+        "Preview the recurring weekly email before it is sent by GitHub Actions. The automated workflow uses the same report generator."
+    )
+
+    source = df_full if df_full is not None else filtered
+    forecast, _ = build_inventory_forecast(source, filtered)
+    forecast = normalize_forecast_columns(forecast)
+    default_products = default_weekly_report_products(source, forecast, limit=6)
+    product_options = sorted(source["commonName"].dropna().unique().tolist())
+    selected_products = st.multiselect(
+        "Products included in velocity trend tables",
+        product_options,
+        default=[product for product in default_products if product in product_options],
+        help="The email always includes KPI summary and critical/low inventory. These products control the screenshot-style trend tables.",
+    )
+
+    report = build_weekly_email_report(source, selected_products=selected_products)
+    week_label = report.report_week.date().isoformat() if report.report_week is not None and pd.notna(report.report_week) else "latest week"
+    action_count = len(report.action_rows)
+
+    top_cols = st.columns(4)
+    top_cols[0].metric("Report Week", week_label)
+    top_cols[1].metric("Action Rows", number(action_count), "Critical or Low")
+    top_cols[2].metric("Trend Tables", number(len(selected_products)))
+    top_cols[3].metric("Email Status", "Preview", "GitHub Actions will send weekly")
+
+    with st.expander("GitHub Actions setup needed", expanded=False):
+        st.markdown(
+            """
+            Add these repository secrets before enabling the weekly sender:
+
+            - `GOOGLE_SHEET_URL`
+            - `GOOGLE_SERVICE_ACCOUNT_JSON`
+            - `REPORT_RECIPIENTS` comma-separated email addresses
+            - `REPORT_EMAIL_SENDER`
+            - `REPORT_SMTP_HOST`
+            - `REPORT_SMTP_PORT`
+            - `REPORT_SMTP_USERNAME`
+            - `REPORT_SMTP_PASSWORD`
+
+            The workflow also supports manual runs from GitHub's **Run workflow** button.
+            """
+        )
+
+    st.download_button(
+        "Download weekly email HTML",
+        report.html.encode("utf-8"),
+        "chef_haks_weekly_email_report.html",
+        "text/html",
+        use_container_width=True,
+    )
+
+    with st.expander("Send test email from dashboard", expanded=False):
+        st.caption("Uses the same SMTP environment variables as GitHub Actions. Keep credentials out of the repo.")
+        recipients_text = st.text_input("Recipients", value="", placeholder="name@example.com, team@example.com")
+        if st.button("Send test email", use_container_width=True):
+            try:
+                recipients = [email.strip() for email in recipients_text.split(",")]
+                send_email_report(report, recipients)
+                st.success("Test email sent.")
+            except Exception as exc:
+                st.error(f"Could not send test email: {exc}")
+
+    st.markdown("**Email Preview**")
+    components.html(report.html, height=900, scrolling=True)
+
+
 def render_custom_analysis(filtered):
     st.subheader("Custom Analysis")
     st.caption("Sidebar filters apply to the whole dashboard. Use this section for additional custom charts, matrix views, and row-level export.")
@@ -1310,8 +1851,8 @@ def main():
         with st.expander("Data load warnings", expanded=True):
             st.warning("Some rows or tabs needed cleanup during import. Review these before relying on the dashboard.")
             st.write(df.attrs["load_warnings"])
-    overview_tab, weekly_tab, region_tab, product_region_tab, inventory_tab, custom_tab = st.tabs(
-        ["Overview", "Weekly Trends", "Region Analysis", "Product x Region", "Inventory", "Custom / Export"]
+    overview_tab, weekly_tab, region_tab, product_region_tab, inventory_tab, forecast_tab, email_tab, custom_tab = st.tabs(
+        ["Overview", "Weekly Trends", "Region Analysis", "Product x Region", "Inventory", "Inventory Forecast", "Email Report", "Custom / Export"]
     )
 
     with overview_tab:
@@ -1329,6 +1870,12 @@ def main():
 
     with inventory_tab:
         render_inventory_health(filtered, df_full=df)
+
+    with forecast_tab:
+        render_inventory_forecast(filtered, df_full=df)
+
+    with email_tab:
+        render_email_report(filtered, df_full=df)
 
     with custom_tab:
         render_custom_analysis(filtered)
