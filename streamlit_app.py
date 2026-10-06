@@ -1793,6 +1793,8 @@ def render_email_report(filtered, df_full=None):
                     "REPORT_SMTP_PORT": "smtp_port",
                     "REPORT_SMTP_USERNAME": "username",
                     "REPORT_SMTP_PASSWORD": "password",
+                    "REPORT_SMTP_USE_TLS": "use_tls",
+                    "REPORT_SMTP_REQUIRE_AUTH": "require_auth",
                 }.items():
                     if secret_name in st.secrets:
                         smtp_settings[argument_name] = st.secrets[secret_name]

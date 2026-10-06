@@ -43,6 +43,10 @@ def _decimal(value, places=1):
     return f"{value:,.{places}f}"
 
 
+def _setting_bool(value):
+    return str(value).strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _percent(value):
     if pd.isna(value):
         return "-"
@@ -400,7 +404,17 @@ def build_weekly_email_report(df, selected_products=None):
     return WeeklyEmailReport(subject=subject, html=html, report_week=report_week, action_rows=action_rows)
 
 
-def send_email_report(report, recipients, sender=None, smtp_host=None, smtp_port=None, username=None, password=None):
+def send_email_report(
+    report,
+    recipients,
+    sender=None,
+    smtp_host=None,
+    smtp_port=None,
+    username=None,
+    password=None,
+    use_tls=None,
+    require_auth=None,
+):
     recipients = [email.strip() for email in recipients if email and email.strip()]
     if not recipients:
         raise ValueError("At least one recipient email is required.")
@@ -410,13 +424,20 @@ def send_email_report(report, recipients, sender=None, smtp_host=None, smtp_port
     smtp_port = int(smtp_port or os.getenv("REPORT_SMTP_PORT", "587"))
     username = username or os.getenv("REPORT_SMTP_USERNAME")
     password = password or os.getenv("REPORT_SMTP_PASSWORD")
+    use_tls = _setting_bool(use_tls if use_tls is not None else os.getenv("REPORT_SMTP_USE_TLS", "true"))
+    require_auth = _setting_bool(require_auth if require_auth is not None else os.getenv("REPORT_SMTP_REQUIRE_AUTH", "true"))
 
     missing = [name for name, value in {
         "REPORT_EMAIL_SENDER": sender,
         "REPORT_SMTP_HOST": smtp_host,
-        "REPORT_SMTP_USERNAME": username,
-        "REPORT_SMTP_PASSWORD": password,
     }.items() if not value]
+    if require_auth:
+        missing.extend(
+            name for name, value in {
+                "REPORT_SMTP_USERNAME": username,
+                "REPORT_SMTP_PASSWORD": password,
+            }.items() if not value
+        )
     if missing:
         raise RuntimeError(f"Missing email settings: {', '.join(missing)}")
 
@@ -428,8 +449,10 @@ def send_email_report(report, recipients, sender=None, smtp_host=None, smtp_port
     message.add_alternative(report.html, subtype="html")
 
     with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-        server.starttls()
-        server.login(username, password)
+        if use_tls:
+            server.starttls()
+        if require_auth:
+            server.login(username, password)
         server.send_message(message)
 
 
