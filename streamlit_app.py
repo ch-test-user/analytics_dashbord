@@ -1786,7 +1786,17 @@ def render_email_report(filtered, df_full=None):
         if st.button("Send test email", use_container_width=True):
             try:
                 recipients = [email.strip() for email in recipients_text.split(",")]
-                send_email_report(report, recipients)
+                smtp_settings = {}
+                for secret_name, argument_name in {
+                    "REPORT_EMAIL_SENDER": "sender",
+                    "REPORT_SMTP_HOST": "smtp_host",
+                    "REPORT_SMTP_PORT": "smtp_port",
+                    "REPORT_SMTP_USERNAME": "username",
+                    "REPORT_SMTP_PASSWORD": "password",
+                }.items():
+                    if secret_name in st.secrets:
+                        smtp_settings[argument_name] = st.secrets[secret_name]
+                send_email_report(report, recipients, **smtp_settings)
                 st.success("Test email sent.")
             except Exception as exc:
                 st.error(f"Could not send test email: {exc}")

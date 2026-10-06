@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,14 @@ def load_config():
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_local_streamlit_secrets():
+    path = ROOT / ".streamlit" / "secrets.toml"
+    if not path.exists():
+        return {}
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
 
 
 def google_credentials_from_env_or_config(config):
@@ -62,6 +71,10 @@ def main():
     parser.add_argument("--recipients", default="", help="Comma-separated recipient list. Defaults to REPORT_RECIPIENTS.")
     parser.add_argument("--output", default="artifacts/chef_haks_weekly_email_report.html", help="Path where the HTML report should be saved.")
     args = parser.parse_args()
+
+    local_secrets = load_local_streamlit_secrets()
+    for key, value in local_secrets.items():
+        os.environ.setdefault(str(key), str(value))
 
     df = load_report_data()
     if df.empty:
