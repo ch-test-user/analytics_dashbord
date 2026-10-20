@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 
 from app_core.data import load_uploaded_workbooks, load_workbooks, list_workbooks
 from app_core.forecasting import FORECAST_METRIC_DEFINITIONS, build_inventory_forecast
-from app_core.google_sheets import load_frozen_google_sheet, load_google_sheet
+from app_core.google_sheets import load_google_sheet
 from app_core.weekly_email_report import build_weekly_email_report, send_email_report
 from app_core.metrics import (
     DEFAULT_CHARTS,
@@ -207,6 +207,9 @@ def cached_google_sheet_load(spreadsheet_url_or_id, credentials_path):
 
 @st.cache_data(show_spinner=False)
 def cached_frozen_google_sheet_load(spreadsheet_url_or_id, credentials_path):
+    # Keep the established Deli dashboard available even while Frozen is unavailable.
+    from app_core.google_sheets import load_frozen_google_sheet
+
     return add_derived_metrics(load_frozen_google_sheet(spreadsheet_url_or_id, credentials_path or None))
 
 
