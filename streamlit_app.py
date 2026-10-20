@@ -1,5 +1,6 @@
 from html import escape
 import calendar
+import importlib
 import json
 from pathlib import Path
 
@@ -207,10 +208,13 @@ def cached_google_sheet_load(spreadsheet_url_or_id, credentials_path):
 
 @st.cache_data(show_spinner=False)
 def cached_frozen_google_sheet_load(spreadsheet_url_or_id, credentials_path):
-    # Keep the established Deli dashboard available even while Frozen is unavailable.
-    from app_core.google_sheets import load_frozen_google_sheet
+    # Streamlit may rerun this file before reloading an imported module after a deploy.
+    import app_core.data as data_module
+    import app_core.google_sheets as sheets_module
 
-    return add_derived_metrics(load_frozen_google_sheet(spreadsheet_url_or_id, credentials_path or None))
+    importlib.reload(data_module)
+    sheets_module = importlib.reload(sheets_module)
+    return add_derived_metrics(sheets_module.load_frozen_google_sheet(spreadsheet_url_or_id, credentials_path or None))
 
 
 def file_signatures(paths):
