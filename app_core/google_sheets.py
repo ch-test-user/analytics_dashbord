@@ -28,7 +28,7 @@ def extract_spreadsheet_id(value):
 
 
 def first_non_empty_header(values):
-    header_tokens = {"week start", "week ending", "venue", "dollar sales", "unit sales"}
+    header_tokens = {"week start", "week ending", "venue", "region", "dollar sales", "unit sales"}
     for index, row in enumerate(values):
         normalized = {str(cell).strip().lower() for cell in row}
         if len(header_tokens & normalized) >= 3:
@@ -129,7 +129,78 @@ def excel_bytes_to_frame(content, source_name):
     return combined
 
 
-def load_drive_excel_file(file_id, credentials_path):
+FROZEN_WEEKLY_HEADERS = {
+    "week start",
+    "week ending",
+    "venue",
+    "region",
+    "dollar sales",
+    "avg. $ sales whse selling",
+    "avg. $ sales  whse selling",
+    "avge $ sales per whse selling",
+    "avg. $ sales per whse selling",
+    "unit sales",
+    "inventory",
+}
+
+
+def frozen_weekly_values(values):
+    """Extract the regional weekly block from a Frozen product tab.
+
+    Some tabs start with store-level callouts, but the consistently named weekly block
+    begins at the row containing Week Start, Week Ending and Region/Venue.
+    """
+    for header_index, row in enumerate(values):
+        normalized = [str(cell).strip().lower() for cell in row]
+        try:
+            start = normalized.index("week start")
+        except ValueError:
+            continue
+        if "week ending" not in normalized[start:] or not ({"region", "venue"} & set(normalized[start:])):
+            continue
+        selected = [index for index in range(start, len(row)) if normalized[index] in FROZEN_WEEKLY_HEADERS]
+        if {"week start", "week ending", "dollar sales", "unit sales"} - {normalized[index] for index in selected}:
+            continue
+        return [[row[index] for index in selected], *[[row[index] if index < len(row) else None for index in selected] for row in values[header_index + 1 :]]]
+    return None
+
+
+def frozen_excel_bytes_to_frame(content, source_name):
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+    frames = []
+    errors = []
+    warnings = []
+    for index, sheet_name in enumerate(workbook.sheetnames):
+        if sheet_name.strip().upper() == "SUMMARY":
+            continue
+        try:
+            raw_values, demo_flags = worksheet_values_and_demo_flags(workbook[sheet_name])
+            weekly_values = frozen_weekly_values(raw_values)
+            if not weekly_values:
+                warnings.append(f"{sheet_name}: no regional weekly table found.")
+                continue
+            raw = values_to_frame(weekly_values)
+            if "Region" in raw:
+                raw["Region"] = raw["Region"].replace("", pd.NA).ffill()
+            if "Venue" in raw:
+                raw["Venue"] = raw["Venue"].replace("", pd.NA).ffill()
+            frame = normalize_frame(raw, source_name, sheet_name, source_order=index)
+            warnings.extend(frame.attrs.get("load_warnings", []))
+            frame["commonName"] = frame["commonName"].fillna(sheet_name)
+            frame["productTab"] = sheet_name
+            if not frame.empty:
+                frames.append(frame)
+            else:
+                warnings.append(f"{sheet_name}: no usable regional weekly rows loaded.")
+        except Exception as exc:
+            errors.append(f"{sheet_name}: {exc}")
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    combined.attrs["load_errors"] = errors
+    combined.attrs["load_warnings"] = warnings
+    return combined
+
+
+def load_drive_excel_file(file_id, credentials_path, layout="standard"):
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaIoBaseDownload
@@ -156,7 +227,8 @@ def load_drive_excel_file(file_id, credentials_path):
             "file is shared with the service-account email."
         ) from exc
 
-    return excel_bytes_to_frame(buffer.getvalue(), metadata.get("name", f"Google Drive file: {file_id}"))
+    loader = frozen_excel_bytes_to_frame if layout == "frozen-weekly" else excel_bytes_to_frame
+    return loader(buffer.getvalue(), metadata.get("name", f"Google Drive file: {file_id}"))
 
 
 def load_private_google_sheet(spreadsheet_id, credentials_path):
@@ -218,3 +290,8 @@ def load_google_sheet(spreadsheet_url_or_id, credentials_path=None):
     if credentials_path:
         return load_private_google_sheet(spreadsheet_id, credentials_path)
     return load_public_google_sheet(spreadsheet_id)
+
+
+def load_frozen_google_sheet(spreadsheet_url_or_id, credentials_path):
+    """Load Frozen's Drive-hosted Excel workbook through the shared service account."""
+    return load_drive_excel_file(extract_spreadsheet_id(spreadsheet_url_or_id), credentials_path, layout="frozen-weekly")

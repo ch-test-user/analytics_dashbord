@@ -1,5 +1,10 @@
 {
   "title": "Costco Weekly Consumption",
+  "defaultDataset": "deli",
+  "datasets": [
+    { "id": "deli", "label": "Deli" },
+    { "id": "frozen", "label": "Frozen" }
+  ],
   "defaultMetric": "unitSales",
   "charts": [
     {

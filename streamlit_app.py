@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 
 from app_core.data import load_uploaded_workbooks, load_workbooks, list_workbooks
 from app_core.forecasting import FORECAST_METRIC_DEFINITIONS, build_inventory_forecast
-from app_core.google_sheets import load_google_sheet
+from app_core.google_sheets import load_frozen_google_sheet, load_google_sheet
 from app_core.weekly_email_report import build_weekly_email_report, send_email_report
 from app_core.metrics import (
     DEFAULT_CHARTS,
@@ -205,6 +205,11 @@ def cached_google_sheet_load(spreadsheet_url_or_id, credentials_path):
     return add_derived_metrics(load_google_sheet(spreadsheet_url_or_id, credentials_path or None))
 
 
+@st.cache_data(show_spinner=False)
+def cached_frozen_google_sheet_load(spreadsheet_url_or_id, credentials_path):
+    return add_derived_metrics(load_frozen_google_sheet(spreadsheet_url_or_id, credentials_path or None))
+
+
 def file_signatures(paths):
     return tuple((str(path), Path(path).stat().st_mtime, Path(path).stat().st_size) for path in paths)
 
@@ -240,29 +245,54 @@ def google_credentials_config(config):
 
 
 def load_dashboard_data(config):
+    configured_datasets = config.get("datasets")
+    if configured_datasets:
+        dataset_ids = list(configured_datasets)
+        default_dataset = config.get("defaultDataset", dataset_ids[0])
+    else:
+        # Preserve compatibility with the earlier single-source configuration.
+        configured_datasets = {"default": config}
+        dataset_ids = ["default"]
+        default_dataset = "default"
+
+    default_index = dataset_ids.index(default_dataset) if default_dataset in dataset_ids else 0
     with st.sidebar:
-        st.header("Data Source")
-        st.caption("Google Sheets")
+        st.header("Product Category")
+        selected_dataset = st.radio(
+            "Data set",
+            dataset_ids,
+            index=default_index,
+            format_func=lambda dataset_id: configured_datasets[dataset_id].get("label", dataset_id.replace("-", " ").title()),
+            label_visibility="collapsed",
+        )
+        dataset_config = configured_datasets[selected_dataset]
+        source_kind = dataset_config.get("sourceKind", "google-sheet")
 
         if st.button("Refresh data cache", use_container_width=True):
             cached_google_sheet_load.clear()
+            cached_frozen_google_sheet_load.clear()
             st.rerun()
 
-        spreadsheet_url = st.text_input("Google Sheet URL or ID", value=config.get("googleSheetUrl", ""))
-        credentials_config, _ = google_credentials_config(config)
+        st.caption(dataset_config.get("label", "Google Sheets"))
+        spreadsheet_url = dataset_config.get("googleSheetUrl", "")
+        credentials_config, _ = google_credentials_config(dataset_config)
         if not spreadsheet_url:
-            st.warning("Enter a Google Sheet URL or spreadsheet ID.")
+            st.error("This product category has no configured data source.")
             st.stop()
         if credentials_config and not isinstance(credentials_config, dict) and not Path(credentials_config).expanduser().exists():
-            st.warning("Service account key path does not exist.")
+            st.error("The configured service-account key path does not exist.")
+            st.stop()
 
         try:
-            df = cached_google_sheet_load(spreadsheet_url, credentials_config)
+            if source_kind == "frozen-google-sheet":
+                df = cached_frozen_google_sheet_load(spreadsheet_url, credentials_config)
+            else:
+                df = cached_google_sheet_load(spreadsheet_url, credentials_config)
         except Exception as exc:
-            st.error(f"Could not load Google Sheet: {exc}")
+            st.error(f"Could not load {dataset_config.get('label', 'the selected data source')}: {exc}")
             st.stop()
         source_tabs = sorted(df["sourceSheet"].dropna().unique().tolist()) if not df.empty and "sourceSheet" in df else []
-        return df, "Google Sheets", source_tabs
+        return df, dataset_config.get("label", "Google Sheets"), source_tabs
 
 
 def metric_card(label, compact_value, detail=None):

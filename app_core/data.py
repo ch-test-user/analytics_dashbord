@@ -25,6 +25,7 @@ def parse_week_start(time_value, date_label):
 COLUMN_RENAMES = {
     "Item": "item",
     "Venue": "venue",
+    "Region": "venue",
     "Time": "time",
     "Week Start": "weekStart",
     "Week Ending": "weekEnding",
@@ -36,10 +37,13 @@ COLUMN_RENAMES = {
     "Whse Selling": "warehousesSelling",
     "Avg. $ Sales Whse Selling": "avgSalesPerWarehouse",
     "Avg. $ Sales  Whse Selling": "avgSalesPerWarehouse",
+    "Avge $ Sales per Whse Selling": "avgSalesPerWarehouse",
+    "Avg. $ Sales per Whse Selling": "avgSalesPerWarehouse",
     "Warehouses Selling Year Ago": "warehousesSellingYearAgo",
     "Number of Warehouses": "numberOfWarehouses",
     "Number of Warehouses Year Ago": "numberOfWarehousesYearAgo",
     "Inventory On Hand": "inventoryOnHand",
+    "Inventory": "inventoryOnHand",
     "Common Names": "commonName",
     "Dates": "dateLabel",
 }
@@ -73,9 +77,10 @@ def remove_rollup_rows(df):
 
 def extract_item_code(value):
     text = str(value or "")
-    if "ITEM " not in text:
-        return None
-    return text.split("ITEM ", 1)[1].split(" ", 1)[0]
+    if "ITEM " in text:
+        return text.split("ITEM ", 1)[1].split(" ", 1)[0]
+    match = re.match(r"\s*(\d{5,})\b", text)
+    return match.group(1) if match else None
 
 
 def safe_parse_week(time_value, date_label):

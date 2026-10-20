@@ -8,6 +8,7 @@ const metricLabels = {
   numberOfWarehouses: "Warehouses",
   numberOfWarehousesYearAgo: "Warehouses YA",
   inventoryOnHand: "Inventory",
+  avgSalesPerWarehouse: "Avg. Sales per Warehouse",
   coverageRate: "Coverage Rate"
 };
 
@@ -25,6 +26,7 @@ const dimensionLabels = {
 const state = {
   data: null,
   config: null,
+  dataset: "deli",
   charts: [],
   search: "",
   metric: "unitSales",
@@ -38,6 +40,7 @@ const els = {
   sourceMeta: document.querySelector("#sourceMeta"),
   dashboardTitle: document.querySelector("#dashboardTitle"),
   activeSummary: document.querySelector("#activeSummary"),
+  datasetToggle: document.querySelector("#datasetToggle"),
   searchInput: document.querySelector("#searchInput"),
   metricSelect: document.querySelector("#metricSelect"),
   startDate: document.querySelector("#startDate"),
@@ -101,20 +104,14 @@ async function loadJson(path) {
 }
 
 async function init() {
-  const [config, data] = await Promise.all([
-    loadJson("/public/dashboard.config.json"),
-    loadJson("/api/data")
-  ]);
-  state.config = config;
-  state.data = { ...data, records: normalizeRecords(data.records) };
-  state.metric = config.defaultMetric || "unitSales";
-  state.charts = loadCharts(config.charts);
+  state.config = await loadJson("/public/dashboard.config.json");
+  state.metric = state.config.defaultMetric || "unitSales";
   setupControls();
-  render();
+  await switchDataset(state.config.defaultDataset || "deli");
 }
 
 function loadCharts(defaultCharts) {
-  const saved = localStorage.getItem("costcoDashboardCharts");
+  const saved = localStorage.getItem(`costcoDashboardCharts:${state.dataset}`);
   if (!saved) return defaultCharts;
   try {
     const parsed = JSON.parse(saved);
@@ -125,24 +122,10 @@ function loadCharts(defaultCharts) {
 }
 
 function saveCharts() {
-  localStorage.setItem("costcoDashboardCharts", JSON.stringify(state.charts));
+  localStorage.setItem(`costcoDashboardCharts:${state.dataset}`, JSON.stringify(state.charts));
 }
 
 function setupControls() {
-  const metadata = state.data.metadata;
-  els.dashboardTitle.textContent = state.config.title || "Dashboard";
-  els.sourceMeta.textContent = `${metadata.rowCount.toLocaleString()} rows from ${metadata.sourceSheet}`;
-  els.startDate.value = metadata.weekRange.min || "";
-  els.endDate.value = metadata.weekRange.max || "";
-  state.startDate = els.startDate.value;
-  state.endDate = els.endDate.value;
-
-  const metrics = [...metadata.fields.metrics, "coverageRate"];
-  fillSelect(els.metricSelect, metrics, metricLabels);
-  fillSelect(els.chartMetric, metrics, metricLabels);
-  fillSelect(els.chartDimension, metadata.fields.dimensions, dimensionLabels);
-  els.metricSelect.value = state.metric;
-
   els.searchInput.addEventListener("input", () => {
     state.search = els.searchInput.value.trim().toLowerCase();
     render();
@@ -174,6 +157,45 @@ function setupControls() {
     addChart();
   });
   els.downloadButton.addEventListener("click", downloadCsv);
+}
+
+function renderDatasetToggle() {
+  els.datasetToggle.innerHTML = "";
+  (state.config.datasets || []).forEach(dataset => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = dataset.label;
+    button.setAttribute("aria-pressed", String(dataset.id === state.dataset));
+    button.addEventListener("click", () => void switchDataset(dataset.id));
+    els.datasetToggle.append(button);
+  });
+}
+
+async function switchDataset(dataset) {
+  if (!(state.config.datasets || []).some(item => item.id === dataset)) return;
+  state.dataset = dataset;
+  state.search = "";
+  state.selectedVenues.clear();
+  state.selectedItems.clear();
+  els.searchInput.value = "";
+  const data = await loadJson(`/api/data?dataset=${encodeURIComponent(dataset)}`);
+  state.data = { ...data, records: normalizeRecords(data.records) };
+  const metadata = state.data.metadata;
+  state.metric = metadata.fields.metrics.includes(state.metric) ? state.metric : (metadata.fields.metrics[0] || "unitSales");
+  state.charts = loadCharts(state.config.charts);
+  els.dashboardTitle.textContent = `${metadata.datasetLabel || dataset} Dashboard`;
+  els.sourceMeta.textContent = `${metadata.rowCount.toLocaleString()} rows from ${metadata.sourceSheet}`;
+  els.startDate.value = metadata.weekRange.min || "";
+  els.endDate.value = metadata.weekRange.max || "";
+  state.startDate = els.startDate.value;
+  state.endDate = els.endDate.value;
+  const metrics = [...metadata.fields.metrics, ...(metadata.fields.metrics.includes("coverageRate") ? [] : ["coverageRate"])];
+  fillSelect(els.metricSelect, metrics, metricLabels);
+  fillSelect(els.chartMetric, metrics, metricLabels);
+  fillSelect(els.chartDimension, metadata.fields.dimensions, dimensionLabels);
+  els.metricSelect.value = state.metric;
+  renderDatasetToggle();
+  render();
 }
 
 function fillSelect(select, values, labels) {
@@ -382,17 +404,17 @@ async function refreshData() {
   els.refreshButton.disabled = true;
   els.refreshButton.textContent = "Refreshing";
   try {
-    const response = await fetch("/api/refresh", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const response = await fetch("/api/refresh", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataset: state.dataset }) });
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Refresh failed");
-    const data = await loadJson("/api/data");
+    const data = await loadJson(`/api/data?dataset=${encodeURIComponent(state.dataset)}`);
     state.data = { ...data, records: normalizeRecords(data.records) };
     render();
   } catch (error) {
     alert(error.message);
   } finally {
     els.refreshButton.disabled = false;
-    els.refreshButton.textContent = "Refresh Excel Data";
+    els.refreshButton.textContent = "Refresh data";
   }
 }
 
@@ -404,7 +426,7 @@ function downloadCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "costco_filtered_rows.csv";
+  link.download = `${state.dataset}_filtered_rows.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }

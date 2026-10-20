@@ -199,6 +199,31 @@ select {
   justify-content: flex-end;
 }
 
+.dataset-toggle {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+}
+
+.dataset-toggle button {
+  min-height: 34px;
+  border-radius: 0;
+  padding: 0 12px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.dataset-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+
+.dataset-toggle button[aria-pressed="true"] {
+  color: white;
+  background: var(--accent);
+}
+
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(5, minmax(150px, 1fr));

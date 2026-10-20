@@ -1,7 +1,19 @@
 {
-  "defaultDataSource": "Google Sheets",
-  "sourceWorkbook": "/Users/gaganmalhotra/Desktop/Chef Haks/Costco Data/Costco US CH Weekly Consumption Report w.e. 01.11.26 and WOS Test  (2).xlsx",
-  "sourceSheet": "Costco_Weekly_Consumption_Repo",
-  "googleSheetUrl": "https://docs.google.com/spreadsheets/d/11R5Pbx5q-nBxRVN1p9LcQsgd2RCHgm_L/edit?gid=1633115789#gid=1633115789",
-  "googleCredentialsPath": "credentials/google-sheets-service-account.json"
+  "defaultDataset": "deli",
+  "datasets": {
+    "deli": {
+      "label": "Deli Products",
+      "sourceKind": "google-sheet",
+      "googleSheetUrl": "https://docs.google.com/spreadsheets/d/11R5Pbx5q-nBxRVN1p9LcQsgd2RCHgm_L/edit?gid=1633115789#gid=1633115789",
+      "googleCredentialsPath": "credentials/google-sheets-service-account.json",
+      "sourceWorkbook": "/Users/gaganmalhotra/Desktop/Chef Haks/Costco Data/Costco US CH Weekly Consumption Report w.e. 01.11.26 and WOS Test  (2).xlsx",
+      "sourceSheet": "Costco_Weekly_Consumption_Repo"
+    },
+    "frozen": {
+      "label": "Frozen Products",
+      "sourceKind": "frozen-google-sheet",
+      "googleSheetUrl": "https://docs.google.com/spreadsheets/d/1MCAmBkGEif8--7R13HNEZmcL5q9T9Jtb/edit?gid=48110342#gid=48110342",
+      "googleCredentialsPath": "credentials/google-sheets-service-account.json"
+    }
+  }
 }
